@@ -77,6 +77,19 @@ export function loginLab(code, password) {
     });
 }
 
+export function staffLogin(code, username, password) {
+  return fetch(`${BASE}/labs/${code}/staff-login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username, password }),
+  })
+    .then(handle)
+    .then((lab) => {
+      setToken(lab.token);
+      return lab;
+    });
+}
+
 export function listLabs() {
   return fetch(`${BASE}/labs`).then(handle);
 }
@@ -123,12 +136,8 @@ export function addDoctor(code, payload) {
   }).then(handle);
 }
 
-export function updateDoctor(code, doctorId, payload) {
-  return fetch(`${BASE}/labs/${code}/doctors/${doctorId}`, {
-    method: "PATCH",
-    headers: { "Content-Type": "application/json", ...authHeaders() },
-    body: JSON.stringify(payload),
-  }).then(handle);
+export function getReferrals(code) {
+  return fetch(`${BASE}/labs/${code}/referrals`, { headers: { ...authHeaders() } }).then(handle);
 }
 
 export function addPatient(code, payload) {
@@ -145,4 +154,41 @@ export function updatePatient(code, id, payload) {
     headers: { "Content-Type": "application/json", ...authHeaders() },
     body: JSON.stringify(payload),
   }).then(handle);
+}
+
+export function getAnalytics(code) {
+  return fetch(`${BASE}/labs/${code}/analytics`, { headers: { ...authHeaders() } }).then(handle);
+}
+
+export function getStaffList(code) {
+  return fetch(`${BASE}/labs/${code}/staff`, { headers: { ...authHeaders() } }).then(handle);
+}
+
+export function addStaff(code, payload) {
+  return fetch(`${BASE}/labs/${code}/staff`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  }).then(handle);
+}
+
+export function removeStaff(code, id) {
+  return fetch(`${BASE}/labs/${code}/staff/${id}`, {
+    method: "DELETE",
+    headers: { ...authHeaders() },
+  }).then(handle);
+}
+
+// Downloads the PDF report and triggers a browser save/open — not JSON, so
+// it doesn't go through handle().
+export async function downloadReport(code, patientId) {
+  const res = await fetch(`${BASE}/labs/${code}/patients/${patientId}/report`, { headers: { ...authHeaders() } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not generate the report");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  window.open(url, "_blank");
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
 }

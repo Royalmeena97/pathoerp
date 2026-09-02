@@ -7,8 +7,9 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import { pool, initSchema, DEFAULT_TESTS, SECURITY_QUESTIONS } from "./db.js";
-import { createSession, requireSession } from "./sessions.js";
-import { isValidPhone, isValidName, isValidPassword, isValidPrice, isValidPercent } from "./validation.js";
+import { createSession, requireSession, requireAdmin } from "./sessions.js";
+import { isValidPhone, isValidName, isValidPassword, isValidPrice, isValidCommission } from "./validation.js";
+import { streamPatientReport } from "./report.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -72,20 +73,19 @@ async function getTests(labCode) {
 }
 async function getPatients(labCode) {
   const { rows } = await pool.query(
-    `SELECT p.id, p.name, p.age, p.phone, p.test_code as test, p.status, p.due,
-            p.referred_by as "doctorId", d.name as "doctorName",
-            p.commission, p.commission_paid as "commissionPaid"
+    `SELECT p.id, p.name, p.age, p.phone, p.test_code as test, p.status, p.due, p.amount, p.result,
+            p.doctor_id, d.name as doctor_name
      FROM patients p
-     LEFT JOIN doctors d ON d.id = p.referred_by
-     WHERE p.lab_code = $1 ORDER BY p.created_at DESC`,
+     LEFT JOIN doctors d ON p.doctor_id = d.id
+     WHERE p.lab_code = $1
+     ORDER BY p.created_at DESC`,
     [labCode]
   );
   return rows;
 }
 async function getDoctors(labCode) {
   const { rows } = await pool.query(
-    `SELECT id, name, phone, clinic, commission_percent as "commissionPercent"
-     FROM doctors WHERE lab_code = $1 ORDER BY name`,
+    "SELECT id, name, phone, commission_percent FROM doctors WHERE lab_code = $1 ORDER BY name",
     [labCode]
   );
   return rows;
@@ -137,7 +137,7 @@ app.post("/api/labs", authLimiter, async (req, res, next) => {
     // The UI takes a lab straight into the admin dashboard right after
     // signup (no separate login step), so issue a session token here too.
     const token = await createSession(code);
-    res.json({ code, name: name.trim(), city: (city || "").trim(), token });
+    res.json({ code, name: name.trim(), city: (city || "").trim(), token, role: "admin" });
   } catch (err) {
     next(err);
   }
@@ -160,7 +160,7 @@ app.post("/api/labs/:code/login", authLimiter, async (req, res, next) => {
       return res.status(401).json({ error: "Incorrect password" });
     }
     const token = await createSession(lab.code);
-    res.json({ code: lab.code, name: lab.name, city: lab.city, token });
+    res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "admin" });
   } catch (err) {
     next(err);
   }
@@ -201,7 +201,7 @@ app.post("/api/labs/:code/reset-password", authLimiter, async (req, res, next) =
 
     // Log them straight in after a successful reset.
     const token = await createSession(code);
-    res.json({ code: lab.code, name: lab.name, city: lab.city, token });
+    res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "admin" });
   } catch (err) {
     next(err);
   }
@@ -239,63 +239,43 @@ app.get("/api/labs/:code", requireSession, async (req, res, next) => {
     const { rows } = await pool.query("SELECT code, name, city FROM labs WHERE code = $1", [code]);
     const lab = rows[0];
     if (!lab) return res.status(404).json({ error: "Lab not found" });
-    res.json({ ...lab, tests: await getTests(code), patients: await getPatients(code), doctors: await getDoctors(code) });
+    res.json({ ...lab, role: req.sessionRole, tests: await getTests(code), patients: await getPatients(code), doctors: await getDoctors(code) });
   } catch (err) {
     next(err);
   }
 });
 
-// Add a referring doctor
-app.post("/api/labs/:code/doctors", requireSession, async (req, res, next) => {
+// Analytics for the Overview dashboard: revenue for each of the last 7 days,
+// and the 5 most-booked tests overall.
+app.get("/api/labs/:code/analytics", requireSession, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
-    const { name, phone, clinic, commissionPercent } = req.body || {};
-    if (!isValidName(name)) return res.status(400).json({ error: "Doctor name must be 2-80 characters" });
-    if (!isValidPercent(commissionPercent)) return res.status(400).json({ error: "Commission must be a whole number between 0 and 100" });
-
-    const { rows } = await pool.query(
-      `INSERT INTO doctors (lab_code, name, phone, clinic, commission_percent)
-       VALUES ($1, $2, $3, $4, $5)
-       RETURNING id, name, phone, clinic, commission_percent as "commissionPercent"`,
-      [code, name.trim(), (phone || "").trim().slice(0, 20), (clinic || "").trim().slice(0, 80), commissionPercent]
+    const { rows: dailyRows } = await pool.query(
+      `SELECT to_char(day, 'YYYY-MM-DD') AS date, COALESCE(SUM(amount), 0)::int AS revenue
+       FROM generate_series(CURRENT_DATE - INTERVAL '6 days', CURRENT_DATE, INTERVAL '1 day') AS day
+       LEFT JOIN patients p ON p.lab_code = $1 AND p.created_at::date = day
+       GROUP BY day
+       ORDER BY day`,
+      [code]
     );
-    res.json(rows[0]);
-  } catch (err) {
-    next(err);
-  }
-});
-
-// Edit a referring doctor (e.g. change commission rate)
-app.patch("/api/labs/:code/doctors/:id", requireSession, async (req, res, next) => {
-  try {
-    const code = req.params.code.trim().toLowerCase();
-    const id = Number(req.params.id);
-    const { name, phone, clinic, commissionPercent } = req.body || {};
-
-    const { rows } = await pool.query("SELECT * FROM doctors WHERE id = $1 AND lab_code = $2", [id, code]);
-    const doctor = rows[0];
-    if (!doctor) return res.status(404).json({ error: "Doctor not found" });
-
-    const nextName = name !== undefined ? name : doctor.name;
-    const nextPercent = commissionPercent !== undefined ? commissionPercent : doctor.commission_percent;
-    if (!isValidName(nextName)) return res.status(400).json({ error: "Doctor name must be 2-80 characters" });
-    if (!isValidPercent(nextPercent)) return res.status(400).json({ error: "Commission must be a whole number between 0 and 100" });
-
-    const nextPhone = phone !== undefined ? phone : doctor.phone;
-    const nextClinic = clinic !== undefined ? clinic : doctor.clinic;
-
-    await pool.query(
-      "UPDATE doctors SET name = $1, phone = $2, clinic = $3, commission_percent = $4 WHERE id = $5 AND lab_code = $6",
-      [nextName.trim(), (nextPhone || "").trim().slice(0, 20), (nextClinic || "").trim().slice(0, 80), nextPercent, id, code]
+    const { rows: topTests } = await pool.query(
+      `SELECT t.name, COUNT(p.id)::int AS count
+       FROM patients p
+       JOIN tests t ON t.lab_code = p.lab_code AND t.code = p.test_code
+       WHERE p.lab_code = $1
+       GROUP BY t.name
+       ORDER BY count DESC
+       LIMIT 5`,
+      [code]
     );
-    res.json({ id, name: nextName.trim(), phone: nextPhone, clinic: nextClinic, commissionPercent: nextPercent });
+    res.json({ dailyRevenue: dailyRows, topTests });
   } catch (err) {
     next(err);
   }
 });
 
 // Change password (must already hold a valid session, and confirm the old password)
-app.post("/api/labs/:code/change-password", requireSession, authLimiter, async (req, res, next) => {
+app.post("/api/labs/:code/change-password", requireSession, requireAdmin, authLimiter, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
     const { currentPassword, newPassword } = req.body || {};
@@ -317,7 +297,7 @@ app.post("/api/labs/:code/change-password", requireSession, authLimiter, async (
 });
 
 // Add a new test to a lab's Test Master list
-app.post("/api/labs/:code/tests", requireSession, async (req, res, next) => {
+app.post("/api/labs/:code/tests", requireSession, requireAdmin, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
     const { code: testCode, name, price, tat } = req.body || {};
@@ -342,7 +322,7 @@ app.post("/api/labs/:code/tests", requireSession, async (req, res, next) => {
 });
 
 // Edit an existing test (price / name / turnaround)
-app.patch("/api/labs/:code/tests/:testCode", requireSession, async (req, res, next) => {
+app.patch("/api/labs/:code/tests/:testCode", requireSession, requireAdmin, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
     const testCode = req.params.testCode;
@@ -368,6 +348,122 @@ app.patch("/api/labs/:code/tests/:testCode", requireSession, async (req, res, ne
   }
 });
 
+// Add a referring doctor
+app.post("/api/labs/:code/doctors", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { name, phone, commissionPercent } = req.body || {};
+    if (!isValidName(name)) return res.status(400).json({ error: "Doctor name must be 2-80 characters" });
+    const commission = commissionPercent === undefined || commissionPercent === "" ? 0 : Number(commissionPercent);
+    if (!isValidCommission(commission)) return res.status(400).json({ error: "Commission must be a whole number between 0 and 100" });
+
+    const { rows } = await pool.query(
+      "INSERT INTO doctors (lab_code, name, phone, commission_percent) VALUES ($1, $2, $3, $4) RETURNING id, name, phone, commission_percent",
+      [code, name.trim(), (phone || "").trim().slice(0, 20), commission]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Referral report: per doctor, how many patients they sent, total revenue
+// from those patients, and the commission owed at that doctor's rate.
+app.get("/api/labs/:code/referrals", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { rows } = await pool.query(
+      `SELECT d.id, d.name, d.phone, d.commission_percent,
+              COUNT(p.id)::int AS patient_count,
+              COALESCE(SUM(p.amount), 0)::int AS total_revenue
+       FROM doctors d
+       LEFT JOIN patients p ON p.doctor_id = d.id
+       WHERE d.lab_code = $1
+       GROUP BY d.id
+       ORDER BY d.name`,
+      [code]
+    );
+    const withCommission = rows.map((r) => ({
+      ...r,
+      commission_amount: Math.round((r.total_revenue * r.commission_percent) / 100),
+    }));
+    res.json(withCommission);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ---------- staff accounts (receptionist-style logins, admin-only management) ---------- */
+
+// List staff accounts (usernames only, no password data)
+app.get("/api/labs/:code/staff", requireSession, requireAdmin, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { rows } = await pool.query("SELECT id, username, created_at FROM staff WHERE lab_code = $1 ORDER BY username", [code]);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Create a staff account
+app.post("/api/labs/:code/staff", requireSession, requireAdmin, authLimiter, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { username, password } = req.body || {};
+    if (!username || username.trim().length < 3 || username.trim().length > 40) {
+      return res.status(400).json({ error: "Username must be 3-40 characters" });
+    }
+    if (!isValidPassword(password)) return res.status(400).json({ error: "Password must be 4-72 characters" });
+
+    const cleanUsername = username.trim().toLowerCase();
+    const { rows: existing } = await pool.query("SELECT 1 FROM staff WHERE lab_code = $1 AND username = $2", [code, cleanUsername]);
+    if (existing.length) return res.status(409).json({ error: "That username is already taken for this lab" });
+
+    const passwordHash = bcrypt.hashSync(password, 10);
+    const { rows } = await pool.query(
+      "INSERT INTO staff (lab_code, username, password_hash) VALUES ($1, $2, $3) RETURNING id, username, created_at",
+      [code, cleanUsername, passwordHash]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Remove a staff account
+app.delete("/api/labs/:code/staff/:id", requireSession, requireAdmin, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    await pool.query("DELETE FROM staff WHERE id = $1 AND lab_code = $2", [req.params.id, code]);
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Staff login — separate from the owner login above, issues a 'staff' session
+app.post("/api/labs/:code/staff-login", authLimiter, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { username, password } = req.body || {};
+    const cleanUsername = (username || "").trim().toLowerCase();
+    const { rows } = await pool.query("SELECT * FROM staff WHERE lab_code = $1 AND username = $2", [code, cleanUsername]);
+    const staffAccount = rows[0];
+    if (!staffAccount || !password || !bcrypt.compareSync(password, staffAccount.password_hash)) {
+      return res.status(401).json({ error: "Incorrect username or password" });
+    }
+    const { rows: labRows } = await pool.query("SELECT name, city FROM labs WHERE code = $1", [code]);
+    const lab = labRows[0];
+    if (!lab) return res.status(404).json({ error: "Lab not found" });
+
+    const token = await createSession(code, "staff", staffAccount.id);
+    res.json({ code, name: lab.name, city: lab.city, token, role: "staff" });
+  } catch (err) {
+    next(err);
+  }
+});
+
 app.post("/api/labs/:code/patients", requireSession, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
@@ -385,32 +481,23 @@ app.post("/api/labs/:code/patients", requireSession, async (req, res, next) => {
     const testRow = testRows[0];
     if (!testRow) return res.status(400).json({ error: "Unknown test for this lab" });
 
-    // Referral is optional. If a doctor is picked, snapshot their current
-    // commission % into this booking's commission amount — later changes
-    // to the doctor's rate won't retroactively change past payouts.
-    let referredBy = null;
-    let commission = 0;
-    if (doctorId !== undefined && doctorId !== null && doctorId !== "") {
-      const { rows: docRows } = await pool.query(
-        "SELECT * FROM doctors WHERE id = $1 AND lab_code = $2",
-        [Number(doctorId), code]
-      );
-      const doctor = docRows[0];
-      if (!doctor) return res.status(400).json({ error: "Unknown referring doctor for this lab" });
-      referredBy = doctor.id;
-      commission = Math.round((testRow.price * doctor.commission_percent) / 100);
+    let doctorIdValue = null;
+    if (doctorId) {
+      const { rows: docRows } = await pool.query("SELECT id FROM doctors WHERE id = $1 AND lab_code = $2", [doctorId, code]);
+      if (!docRows[0]) return res.status(400).json({ error: "Unknown referring doctor for this lab" });
+      doctorIdValue = docRows[0].id;
     }
 
     const id = "P-" + Math.floor(1000 + Math.random() * 9000);
-    const due = testRow.price;
+    const amount = testRow.price;
 
     await pool.query(
-      `INSERT INTO patients (id, lab_code, name, age, phone, test_code, status, due, referred_by, commission)
+      `INSERT INTO patients (id, lab_code, name, age, phone, test_code, status, due, amount, doctor_id)
        VALUES ($1, $2, $3, $4, $5, $6, 'Sample Collected', $7, $8, $9)`,
-      [id, code, name.trim(), (age || "-").toString().slice(0, 10), phone.trim(), test, due, referredBy, commission]
+      [id, code, name.trim(), (age || "-").toString().slice(0, 10), phone.trim(), test, amount, amount, doctorIdValue]
     );
 
-    res.json({ id, name: name.trim(), age: age || "-", phone: phone.trim(), test, status: "Sample Collected", due, doctorId: referredBy, commission, commissionPaid: false });
+    res.json({ id, name: name.trim(), age: age || "-", phone: phone.trim(), test, status: "Sample Collected", due: amount, amount, doctorId: doctorIdValue });
   } catch (err) {
     next(err);
   }
@@ -421,7 +508,7 @@ app.patch("/api/labs/:code/patients/:id", requireSession, async (req, res, next)
   try {
     const code = req.params.code.trim().toLowerCase();
     const { id } = req.params;
-    const { status, due, commissionPaid } = req.body || {};
+    const { status, due, result } = req.body || {};
 
     const { rows } = await pool.query(
       "SELECT * FROM patients WHERE id = $1 AND lab_code = $2",
@@ -437,19 +524,51 @@ app.patch("/api/labs/:code/patients/:id", requireSession, async (req, res, next)
     if (due !== undefined && !isValidPrice(due)) {
       return res.status(400).json({ error: "Due must be a whole number, 0 or more" });
     }
-    if (commissionPaid !== undefined && typeof commissionPaid !== "boolean") {
-      return res.status(400).json({ error: "commissionPaid must be true or false" });
+    if (result !== undefined && typeof result === "string" && result.length > 4000) {
+      return res.status(400).json({ error: "Result notes are too long (max 4000 characters)" });
     }
 
     const nextStatus = status !== undefined ? status : patient.status;
     const nextDue = due !== undefined ? due : patient.due;
-    const nextCommissionPaid = commissionPaid !== undefined ? commissionPaid : patient.commission_paid;
+    const nextResult = result !== undefined ? result : patient.result;
     await pool.query(
-      "UPDATE patients SET status = $1, due = $2, commission_paid = $3 WHERE id = $4 AND lab_code = $5",
-      [nextStatus, nextDue, nextCommissionPaid, id, code]
+      "UPDATE patients SET status = $1, due = $2, result = $3 WHERE id = $4 AND lab_code = $5",
+      [nextStatus, nextDue, nextResult, id, code]
     );
 
-    res.json({ ...patient, status: nextStatus, due: nextDue, test: patient.test_code, commissionPaid: nextCommissionPaid });
+    res.json({ ...patient, status: nextStatus, due: nextDue, result: nextResult, test: patient.test_code });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Downloadable/printable PDF report for a patient whose report is ready
+app.get("/api/labs/:code/patients/:id/report", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { id } = req.params;
+
+    const { rows: labRows } = await pool.query("SELECT name, city FROM labs WHERE code = $1", [code]);
+    const lab = labRows[0];
+    if (!lab) return res.status(404).json({ error: "Lab not found" });
+
+    const { rows: patientRows } = await pool.query(
+      `SELECT p.*, d.name AS doctor_name
+       FROM patients p
+       LEFT JOIN doctors d ON p.doctor_id = d.id
+       WHERE p.id = $1 AND p.lab_code = $2`,
+      [id, code]
+    );
+    const patient = patientRows[0];
+    if (!patient) return res.status(404).json({ error: "Patient not found" });
+    if (patient.status !== "Report Ready") {
+      return res.status(400).json({ error: "This report isn't marked ready yet" });
+    }
+
+    const { rows: testRows } = await pool.query("SELECT code, name FROM tests WHERE lab_code = $1 AND code = $2", [code, patient.test_code]);
+    const test = testRows[0];
+
+    streamPatientReport(res, { lab, patient, test, doctorName: patient.doctor_name });
   } catch (err) {
     next(err);
   }

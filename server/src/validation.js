@@ -18,7 +18,7 @@ export function isValidPrice(price) {
   return Number.isInteger(n) && n >= 0 && n <= 1000000;
 }
 
-export function isValidPercent(percent) {
+export function isValidCommission(percent) {
   const n = Number(percent);
   return Number.isInteger(n) && n >= 0 && n <= 100;
 }

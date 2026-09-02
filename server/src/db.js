@@ -44,6 +44,19 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+  await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin';`);
+  await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS staff_id INTEGER;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS staff (
+      id SERIAL PRIMARY KEY,
+      lab_code TEXT NOT NULL REFERENCES labs(code) ON DELETE CASCADE,
+      username TEXT NOT NULL,
+      password_hash TEXT NOT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+      UNIQUE(lab_code, username)
+    );
+  `);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS tests (
@@ -54,20 +67,6 @@ export async function initSchema() {
       price INTEGER NOT NULL,
       tat TEXT,
       UNIQUE(lab_code, code)
-    );
-  `);
-
-  // Referring doctors — each lab keeps its own list, with a commission %
-  // that gets applied whenever that doctor refers a patient.
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS doctors (
-      id SERIAL PRIMARY KEY,
-      lab_code TEXT NOT NULL REFERENCES labs(code) ON DELETE CASCADE,
-      name TEXT NOT NULL,
-      phone TEXT,
-      clinic TEXT,
-      commission_percent INTEGER NOT NULL DEFAULT 0,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
 
@@ -85,13 +84,30 @@ export async function initSchema() {
     );
   `);
 
-  // Referral tracking columns — safe to run repeatedly, same pattern as the
-  // security-question columns above. commission is a snapshot (computed
-  // from the doctor's rate at booking time) so later rate changes don't
-  // silently rewrite past payouts.
-  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES doctors(id) ON DELETE SET NULL;`);
-  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS commission INTEGER NOT NULL DEFAULT 0;`);
-  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS commission_paid BOOLEAN NOT NULL DEFAULT false;`);
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS doctors (
+      id SERIAL PRIMARY KEY,
+      lab_code TEXT NOT NULL REFERENCES labs(code) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phone TEXT,
+      commission_percent INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Referral tracking: which doctor (if any) sent this patient, and the
+  // original billed amount (kept separate from "due" so revenue reports
+  // stay accurate even after a patient pays and due drops to 0).
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS doctor_id INTEGER REFERENCES doctors(id) ON DELETE SET NULL;`);
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS amount INTEGER;`);
+  // Best-effort backfill for rows created before the "amount" column existed —
+  // for anyone who has already paid (due = 0) the original amount can't be
+  // recovered, so those show as 0 in older reports. New patients are unaffected.
+  await pool.query(`UPDATE patients SET amount = due WHERE amount IS NULL;`);
+
+  // Free-text result notes, filled in when a report is marked ready — used
+  // to generate the downloadable PDF report.
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS result TEXT;`);
 }
 
 export const DEFAULT_TESTS = [
