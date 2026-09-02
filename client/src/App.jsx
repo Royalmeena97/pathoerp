@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createLab, loginLab, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, changePassword, getSecurityQuestion, resetPassword, clearSession } from "./api.js";
+import { createLab, loginLab, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, addDoctor, updateDoctor, changePassword, getSecurityQuestion, resetPassword, clearSession } from "./api.js";
 
 // Must match server/src/db.js SECURITY_QUESTIONS exactly.
 const SECURITY_QUESTIONS = [
@@ -316,7 +316,7 @@ function LabAdmin({ labCode, back }) {
   const [lab, setLab] = useState(null);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState("overview");
-  const [form, setForm] = useState({ name: "", age: "", phone: "", test: "" });
+  const [form, setForm] = useState({ name: "", age: "", phone: "", test: "", doctorId: "" });
   const [saving, setSaving] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
   const [testForm, setTestForm] = useState({ code: "", name: "", price: "", tat: "Same day" });
@@ -326,6 +326,10 @@ function LabAdmin({ labCode, back }) {
   const [pwForm, setPwForm] = useState({ current: "", next: "", confirm: "" });
   const [pwMsg, setPwMsg] = useState("");
   const [pwErr, setPwErr] = useState("");
+  const [doctorForm, setDoctorForm] = useState({ name: "", phone: "", clinic: "", commissionPercent: "10" });
+  const [doctorFormErr, setDoctorFormErr] = useState("");
+  const [editingDoctor, setEditingDoctor] = useState(null); // doctor id being commission-edited
+  const [editCommission, setEditCommission] = useState("");
 
   async function refresh() {
     const d = await getLabFull(labCode);
@@ -350,10 +354,10 @@ function LabAdmin({ labCode, back }) {
     e.preventDefault();
     if (!form.name || !form.phone || !lab) return;
     setSaving(true);
-    await addPatient(labCode, { name: form.name, age: form.age, phone: form.phone, test: form.test });
+    await addPatient(labCode, { name: form.name, age: form.age, phone: form.phone, test: form.test, doctorId: form.doctorId || null });
     await refresh();
     setSaving(false);
-    setForm({ name: "", age: "", phone: "", test: lab.tests[0]?.code || "" });
+    setForm({ name: "", age: "", phone: "", test: lab.tests[0]?.code || "", doctorId: "" });
     setTab("patients");
   }
 
@@ -401,6 +405,43 @@ function LabAdmin({ labCode, back }) {
     setSaving(false);
   }
 
+  async function addDoctorHandler(e) {
+    e.preventDefault();
+    setDoctorFormErr("");
+    if (!doctorForm.name.trim() || doctorForm.commissionPercent === "") return;
+    setSaving(true);
+    try {
+      await addDoctor(labCode, {
+        name: doctorForm.name.trim(),
+        phone: doctorForm.phone.trim(),
+        clinic: doctorForm.clinic.trim(),
+        commissionPercent: Number(doctorForm.commissionPercent),
+      });
+      await refresh();
+      setDoctorForm({ name: "", phone: "", clinic: "", commissionPercent: "10" });
+    } catch (e2) {
+      setDoctorFormErr(e2.message);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function saveDoctorCommission(id) {
+    if (editCommission === "") return;
+    setSaving(true);
+    await updateDoctor(labCode, id, { commissionPercent: Number(editCommission) });
+    await refresh();
+    setEditingDoctor(null);
+    setSaving(false);
+  }
+
+  async function markCommissionPaid(patientId) {
+    setSaving(true);
+    await updatePatient(labCode, patientId, { commissionPaid: true });
+    await refresh();
+    setSaving(false);
+  }
+
   async function changePasswordHandler(e) {
     e.preventDefault();
     setPwErr("");
@@ -434,8 +475,13 @@ function LabAdmin({ labCode, back }) {
     ["patients", "Patients"],
     ["tests", "Test Master"],
     ["billing", "Billing / Dues"],
+    ["referrals", "Referrals"],
     ["settings", "Settings"],
   ];
+
+  const referredPatients = lab.patients.filter((p) => p.doctorId);
+  const totalCommissionPending = referredPatients.filter((p) => !p.commissionPaid).reduce((a, p) => a + p.commission, 0);
+  const totalCommissionPaid = referredPatients.filter((p) => p.commissionPaid).reduce((a, p) => a + p.commission, 0);
 
   return (
     <div style={{ display: "flex", minHeight: "100%", background: T.bg, color: T.ink, fontFamily: "ui-sans-serif, system-ui" }}>
@@ -487,6 +533,12 @@ function LabAdmin({ labCode, back }) {
                   {lab.tests.map((t) => <option key={t.code} value={t.code}>{t.name} — ₹{t.price}</option>)}
                 </select>
               </label>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Referred by <span style={{ fontWeight: 400, color: T.sub }}>(optional)</span>
+                <select style={inp} value={form.doctorId} onChange={(e) => setForm({ ...form, doctorId: e.target.value })}>
+                  <option value="">Walk-in — no referral</option>
+                  {lab.doctors.map((d) => <option key={d.id} value={d.id}>Dr. {d.name} — {d.commissionPercent}% commission</option>)}
+                </select>
+              </label>
               <button type="submit" style={{ marginTop: 6, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 Register &amp; collect sample
               </button>
@@ -504,7 +556,7 @@ function LabAdmin({ labCode, back }) {
               placeholder="Search by name, ID or phone..."
             />
             <Table
-              cols={["ID", "Name", "Test", "Status", "Due", ""]}
+              cols={["ID", "Name", "Test", "Referred by", "Status", "Due", ""]}
               rows={lab.patients
                 .filter((p) => {
                   const q = patientSearch.trim().toLowerCase();
@@ -519,6 +571,7 @@ function LabAdmin({ labCode, back }) {
                 <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5 }}>{p.id}</span>,
                 p.name,
                 lab.tests.find((t) => t.code === p.test)?.name || p.test,
+                p.doctorName ? <span style={{ color: T.teal, fontWeight: 600 }}>Dr. {p.doctorName}</span> : <span style={{ color: T.sub }}>—</span>,
                 <StatusPill status={p.status} />,
                 p.due ? "₹" + p.due : "—",
                 p.status !== "Report Ready" ? (
@@ -591,6 +644,88 @@ function LabAdmin({ labCode, back }) {
                 lab.tests.find((t) => t.code === p.test)?.name || p.test,
                 <span style={{ color: T.red, fontWeight: 700 }}>₹{p.due}</span>,
                 <button onClick={() => markPaid(p.id)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Mark paid</button>,
+              ])}
+            />
+          </>
+        )}
+
+        {tab === "referrals" && (
+          <>
+            <h2 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 18px" }}>Doctor Referral Tracking</h2>
+
+            <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginBottom: 26 }}>
+              <Card label="Referring doctors" value={lab.doctors.length} />
+              <Card label="Patients referred" value={referredPatients.length} accent={T.teal} />
+              <Card label="Commission pending" value={"₹" + totalCommissionPending} accent={T.red} />
+              <Card label="Commission paid out" value={"₹" + totalCommissionPaid} accent={T.green} />
+            </div>
+
+            <h3 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 12px", fontSize: 16 }}>Doctors</h3>
+            <Table cols={["Name", "Clinic", "Phone", "Commission", "Referrals", "Pending", ""]} rows={lab.doctors.map((d) => {
+              const theirs = referredPatients.filter((p) => p.doctorId === d.id);
+              const pending = theirs.filter((p) => !p.commissionPaid).reduce((a, p) => a + p.commission, 0);
+              return [
+                <span style={{ fontWeight: 700 }}>Dr. {d.name}</span>,
+                d.clinic || "—",
+                d.phone || "—",
+                editingDoctor === d.id ? (
+                  <span style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
+                    <input
+                      autoFocus
+                      style={{ ...inp, marginTop: 0, width: 60, display: "inline-block" }}
+                      value={editCommission}
+                      onChange={(e) => setEditCommission(e.target.value)}
+                      onKeyDown={(e) => e.key === "Enter" && saveDoctorCommission(d.id)}
+                    />
+                    <span style={{ fontSize: 12.5 }}>%</span>
+                  </span>
+                ) : (d.commissionPercent + "%"),
+                theirs.length,
+                pending ? <span style={{ color: T.red, fontWeight: 700 }}>₹{pending}</span> : "—",
+                editingDoctor === d.id ? (
+                  <button onClick={() => saveDoctorCommission(d.id)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: T.teal, color: "#fff", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Save</button>
+                ) : (
+                  <button onClick={() => { setEditingDoctor(d.id); setEditCommission(String(d.commissionPercent)); }} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Edit rate</button>
+                ),
+              ];
+            })} />
+
+            <h3 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "26px 0 12px", fontSize: 16 }}>Add a referring doctor</h3>
+            <form onSubmit={addDoctorHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 460, display: "flex", flexDirection: "column", gap: 10 }}>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Doctor name
+                <input style={inp} value={doctorForm.name} onChange={(e) => setDoctorForm({ ...doctorForm, name: e.target.value })} placeholder="e.g. Dr. Rakesh Sharma" />
+              </label>
+              <div style={{ display: "flex", gap: 12 }}>
+                <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Clinic / hospital
+                  <input style={inp} value={doctorForm.clinic} onChange={(e) => setDoctorForm({ ...doctorForm, clinic: e.target.value })} placeholder="e.g. Sharma Clinic" />
+                </label>
+                <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Phone
+                  <input style={inp} value={doctorForm.phone} onChange={(e) => setDoctorForm({ ...doctorForm, phone: e.target.value })} placeholder="10-digit mobile" />
+                </label>
+              </div>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Commission (%) <span style={{ fontWeight: 400 }}>— applied to each referred patient's test price</span>
+                <input style={{ ...inp, maxWidth: 120 }} type="number" min="0" max="100" value={doctorForm.commissionPercent} onChange={(e) => setDoctorForm({ ...doctorForm, commissionPercent: e.target.value })} />
+              </label>
+              <button type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "10px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+                Add doctor
+              </button>
+              {doctorFormErr && <div style={{ color: T.red, fontSize: 12.5 }}>{doctorFormErr}</div>}
+            </form>
+
+            <h3 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "26px 0 12px", fontSize: 16 }}>Referred patients &amp; commission payouts</h3>
+            <Table
+              cols={["Patient", "Doctor", "Test", "Bill", "Commission", ""]}
+              rows={referredPatients.map((p) => [
+                p.name,
+                <span style={{ color: T.teal, fontWeight: 600 }}>Dr. {p.doctorName}</span>,
+                lab.tests.find((t) => t.code === p.test)?.name || p.test,
+                "₹" + p.due,
+                <span style={{ fontWeight: 700, color: p.commissionPaid ? T.green : T.red }}>₹{p.commission}</span>,
+                p.commissionPaid ? (
+                  <span style={{ color: T.green, fontSize: 12, fontWeight: 600 }}>Paid</span>
+                ) : (
+                  <button onClick={() => markCommissionPaid(p.id)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Mark commission paid</button>
+                ),
               ])}
             />
           </>

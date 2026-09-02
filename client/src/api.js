@@ -115,6 +115,22 @@ export function updateTest(code, testCode, payload) {
   }).then(handle);
 }
 
+export function addDoctor(code, payload) {
+  return fetch(`${BASE}/labs/${code}/doctors`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  }).then(handle);
+}
+
+export function updateDoctor(code, doctorId, payload) {
+  return fetch(`${BASE}/labs/${code}/doctors/${doctorId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify(payload),
+  }).then(handle);
+}
+
 export function addPatient(code, payload) {
   return fetch(`${BASE}/labs/${code}/patients`, {
     method: "POST",

@@ -57,6 +57,20 @@ export async function initSchema() {
     );
   `);
 
+  // Referring doctors — each lab keeps its own list, with a commission %
+  // that gets applied whenever that doctor refers a patient.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS doctors (
+      id SERIAL PRIMARY KEY,
+      lab_code TEXT NOT NULL REFERENCES labs(code) ON DELETE CASCADE,
+      name TEXT NOT NULL,
+      phone TEXT,
+      clinic TEXT,
+      commission_percent INTEGER NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS patients (
       id TEXT PRIMARY KEY,
@@ -70,6 +84,14 @@ export async function initSchema() {
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
+
+  // Referral tracking columns — safe to run repeatedly, same pattern as the
+  // security-question columns above. commission is a snapshot (computed
+  // from the doctor's rate at booking time) so later rate changes don't
+  // silently rewrite past payouts.
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS referred_by INTEGER REFERENCES doctors(id) ON DELETE SET NULL;`);
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS commission INTEGER NOT NULL DEFAULT 0;`);
+  await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS commission_paid BOOLEAN NOT NULL DEFAULT false;`);
 }
 
 export const DEFAULT_TESTS = [

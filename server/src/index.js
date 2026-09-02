@@ -8,7 +8,7 @@ import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import { pool, initSchema, DEFAULT_TESTS, SECURITY_QUESTIONS } from "./db.js";
 import { createSession, requireSession } from "./sessions.js";
-import { isValidPhone, isValidName, isValidPassword, isValidPrice } from "./validation.js";
+import { isValidPhone, isValidName, isValidPassword, isValidPrice, isValidPercent } from "./validation.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -72,8 +72,20 @@ async function getTests(labCode) {
 }
 async function getPatients(labCode) {
   const { rows } = await pool.query(
-    `SELECT id, name, age, phone, test_code as test, status, due
-     FROM patients WHERE lab_code = $1 ORDER BY created_at DESC`,
+    `SELECT p.id, p.name, p.age, p.phone, p.test_code as test, p.status, p.due,
+            p.referred_by as "doctorId", d.name as "doctorName",
+            p.commission, p.commission_paid as "commissionPaid"
+     FROM patients p
+     LEFT JOIN doctors d ON d.id = p.referred_by
+     WHERE p.lab_code = $1 ORDER BY p.created_at DESC`,
+    [labCode]
+  );
+  return rows;
+}
+async function getDoctors(labCode) {
+  const { rows } = await pool.query(
+    `SELECT id, name, phone, clinic, commission_percent as "commissionPercent"
+     FROM doctors WHERE lab_code = $1 ORDER BY name`,
     [labCode]
   );
   return rows;
@@ -227,7 +239,56 @@ app.get("/api/labs/:code", requireSession, async (req, res, next) => {
     const { rows } = await pool.query("SELECT code, name, city FROM labs WHERE code = $1", [code]);
     const lab = rows[0];
     if (!lab) return res.status(404).json({ error: "Lab not found" });
-    res.json({ ...lab, tests: await getTests(code), patients: await getPatients(code) });
+    res.json({ ...lab, tests: await getTests(code), patients: await getPatients(code), doctors: await getDoctors(code) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Add a referring doctor
+app.post("/api/labs/:code/doctors", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { name, phone, clinic, commissionPercent } = req.body || {};
+    if (!isValidName(name)) return res.status(400).json({ error: "Doctor name must be 2-80 characters" });
+    if (!isValidPercent(commissionPercent)) return res.status(400).json({ error: "Commission must be a whole number between 0 and 100" });
+
+    const { rows } = await pool.query(
+      `INSERT INTO doctors (lab_code, name, phone, clinic, commission_percent)
+       VALUES ($1, $2, $3, $4, $5)
+       RETURNING id, name, phone, clinic, commission_percent as "commissionPercent"`,
+      [code, name.trim(), (phone || "").trim().slice(0, 20), (clinic || "").trim().slice(0, 80), commissionPercent]
+    );
+    res.json(rows[0]);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Edit a referring doctor (e.g. change commission rate)
+app.patch("/api/labs/:code/doctors/:id", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const id = Number(req.params.id);
+    const { name, phone, clinic, commissionPercent } = req.body || {};
+
+    const { rows } = await pool.query("SELECT * FROM doctors WHERE id = $1 AND lab_code = $2", [id, code]);
+    const doctor = rows[0];
+    if (!doctor) return res.status(404).json({ error: "Doctor not found" });
+
+    const nextName = name !== undefined ? name : doctor.name;
+    const nextPercent = commissionPercent !== undefined ? commissionPercent : doctor.commission_percent;
+    if (!isValidName(nextName)) return res.status(400).json({ error: "Doctor name must be 2-80 characters" });
+    if (!isValidPercent(nextPercent)) return res.status(400).json({ error: "Commission must be a whole number between 0 and 100" });
+
+    const nextPhone = phone !== undefined ? phone : doctor.phone;
+    const nextClinic = clinic !== undefined ? clinic : doctor.clinic;
+
+    await pool.query(
+      "UPDATE doctors SET name = $1, phone = $2, clinic = $3, commission_percent = $4 WHERE id = $5 AND lab_code = $6",
+      [nextName.trim(), (nextPhone || "").trim().slice(0, 20), (nextClinic || "").trim().slice(0, 80), nextPercent, id, code]
+    );
+    res.json({ id, name: nextName.trim(), phone: nextPhone, clinic: nextClinic, commissionPercent: nextPercent });
   } catch (err) {
     next(err);
   }
@@ -310,7 +371,7 @@ app.patch("/api/labs/:code/tests/:testCode", requireSession, async (req, res, ne
 app.post("/api/labs/:code/patients", requireSession, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
-    const { name, age, phone, test } = req.body || {};
+    const { name, age, phone, test, doctorId } = req.body || {};
     const exists = await labCodeExists(code);
     if (!exists) return res.status(404).json({ error: "Lab not found" });
     if (!isValidName(name)) return res.status(400).json({ error: "Patient name must be 2-80 characters" });
@@ -324,16 +385,32 @@ app.post("/api/labs/:code/patients", requireSession, async (req, res, next) => {
     const testRow = testRows[0];
     if (!testRow) return res.status(400).json({ error: "Unknown test for this lab" });
 
+    // Referral is optional. If a doctor is picked, snapshot their current
+    // commission % into this booking's commission amount — later changes
+    // to the doctor's rate won't retroactively change past payouts.
+    let referredBy = null;
+    let commission = 0;
+    if (doctorId !== undefined && doctorId !== null && doctorId !== "") {
+      const { rows: docRows } = await pool.query(
+        "SELECT * FROM doctors WHERE id = $1 AND lab_code = $2",
+        [Number(doctorId), code]
+      );
+      const doctor = docRows[0];
+      if (!doctor) return res.status(400).json({ error: "Unknown referring doctor for this lab" });
+      referredBy = doctor.id;
+      commission = Math.round((testRow.price * doctor.commission_percent) / 100);
+    }
+
     const id = "P-" + Math.floor(1000 + Math.random() * 9000);
     const due = testRow.price;
 
     await pool.query(
-      `INSERT INTO patients (id, lab_code, name, age, phone, test_code, status, due)
-       VALUES ($1, $2, $3, $4, $5, $6, 'Sample Collected', $7)`,
-      [id, code, name.trim(), (age || "-").toString().slice(0, 10), phone.trim(), test, due]
+      `INSERT INTO patients (id, lab_code, name, age, phone, test_code, status, due, referred_by, commission)
+       VALUES ($1, $2, $3, $4, $5, $6, 'Sample Collected', $7, $8, $9)`,
+      [id, code, name.trim(), (age || "-").toString().slice(0, 10), phone.trim(), test, due, referredBy, commission]
     );
 
-    res.json({ id, name: name.trim(), age: age || "-", phone: phone.trim(), test, status: "Sample Collected", due });
+    res.json({ id, name: name.trim(), age: age || "-", phone: phone.trim(), test, status: "Sample Collected", due, doctorId: referredBy, commission, commissionPaid: false });
   } catch (err) {
     next(err);
   }
@@ -344,7 +421,7 @@ app.patch("/api/labs/:code/patients/:id", requireSession, async (req, res, next)
   try {
     const code = req.params.code.trim().toLowerCase();
     const { id } = req.params;
-    const { status, due } = req.body || {};
+    const { status, due, commissionPaid } = req.body || {};
 
     const { rows } = await pool.query(
       "SELECT * FROM patients WHERE id = $1 AND lab_code = $2",
@@ -360,15 +437,19 @@ app.patch("/api/labs/:code/patients/:id", requireSession, async (req, res, next)
     if (due !== undefined && !isValidPrice(due)) {
       return res.status(400).json({ error: "Due must be a whole number, 0 or more" });
     }
+    if (commissionPaid !== undefined && typeof commissionPaid !== "boolean") {
+      return res.status(400).json({ error: "commissionPaid must be true or false" });
+    }
 
     const nextStatus = status !== undefined ? status : patient.status;
     const nextDue = due !== undefined ? due : patient.due;
+    const nextCommissionPaid = commissionPaid !== undefined ? commissionPaid : patient.commission_paid;
     await pool.query(
-      "UPDATE patients SET status = $1, due = $2 WHERE id = $3 AND lab_code = $4",
-      [nextStatus, nextDue, id, code]
+      "UPDATE patients SET status = $1, due = $2, commission_paid = $3 WHERE id = $4 AND lab_code = $5",
+      [nextStatus, nextDue, nextCommissionPaid, id, code]
     );
 
-    res.json({ ...patient, status: nextStatus, due: nextDue, test: patient.test_code });
+    res.json({ ...patient, status: nextStatus, due: nextDue, test: patient.test_code, commissionPaid: nextCommissionPaid });
   } catch (err) {
     next(err);
   }
