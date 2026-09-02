@@ -26,6 +26,21 @@ export async function initSchema() {
       name TEXT NOT NULL,
       city TEXT,
       password_hash TEXT NOT NULL,
+      security_question TEXT,
+      security_answer_hash TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Safe to run repeatedly — adds the columns if this DB was created before
+  // security questions existed, does nothing if they're already there.
+  await pool.query(`ALTER TABLE labs ADD COLUMN IF NOT EXISTS security_question TEXT;`);
+  await pool.query(`ALTER TABLE labs ADD COLUMN IF NOT EXISTS security_answer_hash TEXT;`);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      token TEXT PRIMARY KEY,
+      lab_code TEXT NOT NULL REFERENCES labs(code) ON DELETE CASCADE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT now()
     );
   `);
@@ -62,4 +77,12 @@ export const DEFAULT_TESTS = [
   { code: "LFT-02", name: "Liver Function Test", price: 600, tat: "Same day" },
   { code: "TSH-03", name: "Thyroid Profile (TSH)", price: 350, tat: "Next day" },
   { code: "LIP-04", name: "Lipid Profile", price: 500, tat: "Same day" },
+];
+
+// Fixed list so both the signup dropdown and the reset flow stay in sync.
+export const SECURITY_QUESTIONS = [
+  "What city were you born in?",
+  "What was the name of your first pet?",
+  "What is your mother's maiden name?",
+  "What was the name of your first school?",
 ];

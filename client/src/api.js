@@ -30,11 +30,32 @@ async function handle(res) {
   return data;
 }
 
-export function createLab({ name, city, password }) {
+export function createLab({ name, city, password, securityQuestion, securityAnswer }) {
   return fetch(`${BASE}/labs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, city, password }),
+    body: JSON.stringify({ name, city, password, securityQuestion, securityAnswer }),
+  })
+    .then(handle)
+    .then((lab) => {
+      setToken(lab.token);
+      return lab;
+    });
+}
+
+export function getSecurityQuestions() {
+  return fetch(`${BASE}/security-questions`).then(handle);
+}
+
+export function getSecurityQuestion(code) {
+  return fetch(`${BASE}/labs/${code}/security-question`).then(handle);
+}
+
+export function resetPassword(code, answer, newPassword) {
+  return fetch(`${BASE}/labs/${code}/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ answer, newPassword }),
   })
     .then(handle)
     .then((lab) => {

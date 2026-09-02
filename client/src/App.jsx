@@ -1,5 +1,13 @@
 import React, { useState, useEffect } from "react";
-import { createLab, loginLab, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, changePassword, clearSession } from "./api.js";
+import { createLab, loginLab, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, changePassword, getSecurityQuestion, resetPassword, clearSession } from "./api.js";
+
+// Must match server/src/db.js SECURITY_QUESTIONS exactly.
+const SECURITY_QUESTIONS = [
+  "What city were you born in?",
+  "What was the name of your first pet?",
+  "What is your mother's maiden name?",
+  "What was the name of your first school?",
+];
 
 /* ---------------------------------------------------------
    Design tokens
@@ -76,22 +84,32 @@ function Table({ cols, rows }) {
    Landing / onboarding
 --------------------------------------------------------- */
 function Landing({ onLabReady, onPatientMode }) {
-  const [mode, setMode] = useState("new"); // new | existing
+  const [mode, setMode] = useState("new"); // new | existing | forgot
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
+  const [securityQuestion, setSecurityQuestion] = useState(SECURITY_QUESTIONS[0]);
+  const [securityAnswer, setSecurityAnswer] = useState("");
   const [code, setCode] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
+  // Forgot-password flow: step 1 asks for the code, step 2 shows the
+  // question and collects the answer + new password.
+  const [forgotCode, setForgotCode] = useState("");
+  const [forgotQuestion, setForgotQuestion] = useState(null);
+  const [forgotAnswer, setForgotAnswer] = useState("");
+  const [forgotNewPassword, setForgotNewPassword] = useState("");
+  const [forgotConfirm, setForgotConfirm] = useState("");
+
   async function createLabHandler(e) {
     e.preventDefault();
-    if (!name.trim() || !password.trim()) return;
+    if (!name.trim() || !password.trim() || !securityAnswer.trim()) return;
     setBusy(true);
     setErr("");
     try {
-      const lab = await createLab({ name, city, password });
+      const lab = await createLab({ name, city, password, securityQuestion, securityAnswer });
       onLabReady(lab.code);
     } catch (e2) {
       setErr(e2.message);
@@ -113,6 +131,50 @@ function Landing({ onLabReady, onPatientMode }) {
     } finally {
       setBusy(false);
     }
+  }
+
+  async function fetchQuestionHandler(e) {
+    e.preventDefault();
+    if (!forgotCode.trim()) return;
+    setBusy(true);
+    setErr("");
+    try {
+      const { question } = await getSecurityQuestion(forgotCode.trim().toLowerCase());
+      setForgotQuestion(question);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function resetPasswordHandler(e) {
+    e.preventDefault();
+    if (!forgotAnswer.trim() || !forgotNewPassword.trim()) return;
+    if (forgotNewPassword !== forgotConfirm) {
+      setErr("New passwords don't match");
+      return;
+    }
+    setBusy(true);
+    setErr("");
+    try {
+      const lab = await resetPassword(forgotCode.trim().toLowerCase(), forgotAnswer, forgotNewPassword);
+      onLabReady(lab.code);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function switchMode(k) {
+    setMode(k);
+    setErr("");
+    setForgotQuestion(null);
+    setForgotCode("");
+    setForgotAnswer("");
+    setForgotNewPassword("");
+    setForgotConfirm("");
   }
 
   return (
@@ -143,16 +205,18 @@ function Landing({ onLabReady, onPatientMode }) {
         </div>
 
         <div style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: 24 }}>
-          <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-            {[["new", "Start a new lab"], ["existing", "I already have a lab"]].map(([k, l]) => (
-              <button key={k} onClick={() => { setMode(k); setErr(""); }} style={{
-                flex: 1, padding: "8px 6px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-                border: `1px solid ${T.line}`, background: mode === k ? T.teal : "transparent", color: mode === k ? "#fff" : T.ink,
-              }}>{l}</button>
-            ))}
-          </div>
+          {mode !== "forgot" && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+              {[["new", "Start a new lab"], ["existing", "I already have a lab"]].map(([k, l]) => (
+                <button key={k} onClick={() => switchMode(k)} style={{
+                  flex: 1, padding: "8px 6px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
+                  border: `1px solid ${T.line}`, background: mode === k ? T.teal : "transparent", color: mode === k ? "#fff" : T.ink,
+                }}>{l}</button>
+              ))}
+            </div>
+          )}
 
-          {mode === "new" ? (
+          {mode === "new" && (
             <form onSubmit={createLabHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab name
@@ -166,11 +230,23 @@ function Landing({ onLabReady, onPatientMode }) {
                 Password
                 <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
               </label>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                Security question <span style={{ fontWeight: 400, color: T.sub }}>(used if you forget your password)</span>
+                <select style={inp} value={securityQuestion} onChange={(e) => setSecurityQuestion(e.target.value)}>
+                  {SECURITY_QUESTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
+                </select>
+              </label>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                Your answer
+                <input style={inp} value={securityAnswer} onChange={(e) => setSecurityAnswer(e.target.value)} placeholder="Remember this answer!" />
+              </label>
               <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Creating..." : "Create lab account"}
               </button>
             </form>
-          ) : (
+          )}
+
+          {mode === "existing" && (
             <form onSubmit={loginLabHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab code
@@ -183,8 +259,49 @@ function Landing({ onLabReady, onPatientMode }) {
               <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Checking..." : "Continue"}
               </button>
+              <button type="button" onClick={() => switchMode("forgot")} style={{ background: "none", border: "none", color: T.teal, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0, textAlign: "left", marginTop: 2 }}>
+                Forgot password?
+              </button>
             </form>
           )}
+
+          {mode === "forgot" && !forgotQuestion && (
+            <form onSubmit={fetchQuestionHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Reset password</div>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                Lab code
+                <input style={inp} value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="e.g. ashirw482" />
+              </label>
+              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+                {busy ? "Checking..." : "Continue"}
+              </button>
+              <button type="button" onClick={() => switchMode("existing")} style={{ background: "none", border: "none", color: T.sub, fontSize: 12.5, cursor: "pointer", padding: 0, textAlign: "left", marginTop: 2 }}>
+                ← Back to login
+              </button>
+            </form>
+          )}
+
+          {mode === "forgot" && forgotQuestion && (
+            <form onSubmit={resetPasswordHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Reset password</div>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                {forgotQuestion}
+                <input style={inp} value={forgotAnswer} onChange={(e) => setForgotAnswer(e.target.value)} placeholder="Your answer" />
+              </label>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                New password
+                <input style={inp} type="password" value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 4 characters" />
+              </label>
+              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+                Confirm new password
+                <input style={inp} type="password" value={forgotConfirm} onChange={(e) => setForgotConfirm(e.target.value)} />
+              </label>
+              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+                {busy ? "Resetting..." : "Reset password & log in"}
+              </button>
+            </form>
+          )}
+
           {err && <div style={{ color: T.red, fontSize: 12.5, marginTop: 8 }}>{err}</div>}
         </div>
       </section>

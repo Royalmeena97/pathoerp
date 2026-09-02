@@ -22,12 +22,10 @@ ke bina ya galat token ke saath in routes pe 401 milega. Public routes (labs
 ki list, ek lab ke tests dikhana patient booking ke liye) ko token nahi
 chahiye.
 
-Note: sessions abhi server ki memory me hain (ek simple Map), disk/DB me nahi.
-Iska matlab agar server restart ho ya aap multiple server instances chalao
-(load balancing), to sessions sab instances me share nahi hongi — user ko
-dobara login karna padega. Agar aage chal ke multi-instance deploy karna ho,
-to isi shape (`labCode`, `token`, `createdAt`) ka ek `sessions` table Postgres
-me bana kar `server/src/sessions.js` ke Map ko replace kar sakte ho.
+Note: sessions ab Postgres `sessions` table me store hote hain (pehle
+in-memory Map me the) — matlab server restart ya redeploy hone par bhi
+logged-in admins logout nahi honge, aur multi-instance deploy karne par bhi
+sab instances same sessions dekh paayenge.
 
 ## Setup — pehli baar
 
@@ -79,19 +77,24 @@ Dev mode me frontend API calls `/api/...` ko automatically backend
 
 ## Kaise use karein
 
-1. **Naya lab banao** — "Start a new lab" pe lab name, city aur ek password daalo.
-   Ek unique code milega (jaise `ashirw482`) — ye code hi lab ki login ID hai.
+1. **Naya lab banao** — "Start a new lab" pe lab name, city, password, aur ek
+   **security question + answer** daalo (password bhool jaane pe isi se
+   reset hoga — answer yaad rakhna). Ek unique code milega (jaise
+   `ashirw482`) — ye code hi lab ki login ID hai.
 2. **Wapas login karna ho** to "I already have a lab" me code + password daalo.
-3. Admin dashboard me patient register karo, reports "Mark ready" karo, dues
+3. **Password bhool gaye ho?** Login form ke neeche "Forgot password?" link
+   se apna lab code daalo, apna security question ka jawab do, naya password
+   set kar do — turant login ho jaaoge.
+4. Admin dashboard me patient register karo, reports "Mark ready" karo, dues
    "Mark paid" karo — sab kuch database me save hota hai.
-4. **Patient booking** — landing page pe "Book a test as patient" button se
+5. **Patient booking** — landing page pe "Book a test as patient" button se
    koi bhi lab choose karke test book kar sakta hai. Ye booking seedha us lab
    ke patient list me aa jaati hai.
-5. **Test Master** tab se naye test add kar sakte ho ya kisi test ka price
+6. **Test Master** tab se naye test add kar sakte ho ya kisi test ka price
    edit kar sakte ho.
-6. **Settings** tab se password change kar sakte ho (current password
+7. **Settings** tab se password change kar sakte ho (current password
    confirm karna padega).
-7. **Patients** tab me search box se naam, ID ya phone se dhoondh sakte ho.
+8. **Patients** tab me search box se naam, ID ya phone se dhoondh sakte ho.
 
 ## Security jo already lagi hui hai
 
@@ -139,12 +142,7 @@ backend aur frontend ek hi service me deploy ho sakte hain:
 
 ## Aage kya improve kar sakte ho (agar chaho to)
 
-- Sessions ko Postgres `sessions` table me move karna (abhi ek in-memory Map
-  hai) — tabhi zaroori hoga jab multiple server instances chalane lage
-  (single instance ke liye abhi theek hai). Shape: `labCode`, `token`,
-  `createdAt` — `server/src/sessions.js` isi shape ko follow karta hai.
 - Patient list ke liye pagination, jab list bahut badi ho jaaye.
 - SMS/email notification jab report ready ho jaye.
-- "Forgot password" flow (email verification ke saath) — abhi sirf
-  logged-in state me password change ho sakta hai, agar bhool jaao to
-  koi recovery nahi hai.
+- Security question ke bajaye email-based password reset (isके liye ek email
+  service jaise SendGrid/SMTP chahiye hoga).

@@ -6,7 +6,7 @@ import cors from "cors";
 import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
-import { pool, initSchema, DEFAULT_TESTS } from "./db.js";
+import { pool, initSchema, DEFAULT_TESTS, SECURITY_QUESTIONS } from "./db.js";
 import { createSession, requireSession } from "./sessions.js";
 import { isValidPhone, isValidName, isValidPassword, isValidPrice } from "./validation.js";
 
@@ -84,19 +84,29 @@ async function getPatients(labCode) {
 // Create a new lab account
 app.post("/api/labs", authLimiter, async (req, res, next) => {
   try {
-    const { name, city, password } = req.body || {};
+    const { name, city, password, securityQuestion, securityAnswer } = req.body || {};
     if (!isValidName(name)) return res.status(400).json({ error: "Lab name must be 2-80 characters" });
     if (!isValidPassword(password)) return res.status(400).json({ error: "Password must be 4-72 characters" });
+    if (!SECURITY_QUESTIONS.includes(securityQuestion)) {
+      return res.status(400).json({ error: "Please choose a valid security question" });
+    }
+    if (!securityAnswer || !securityAnswer.trim()) {
+      return res.status(400).json({ error: "A security answer is required (used to reset your password later)" });
+    }
 
     const code = await slugify(name);
     const passwordHash = bcrypt.hashSync(password, 10);
+    // Answers are normalized (trimmed + lowercased) before hashing so "Delhi"
+    // and "delhi " both match later.
+    const answerHash = bcrypt.hashSync(securityAnswer.trim().toLowerCase(), 10);
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
       await client.query(
-        "INSERT INTO labs (code, name, city, password_hash) VALUES ($1, $2, $3, $4)",
-        [code, name.trim(), (city || "").trim().slice(0, 80), passwordHash]
+        `INSERT INTO labs (code, name, city, password_hash, security_question, security_answer_hash)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [code, name.trim(), (city || "").trim().slice(0, 80), passwordHash, securityQuestion, answerHash]
       );
       for (const t of DEFAULT_TESTS) {
         await client.query(
@@ -114,11 +124,16 @@ app.post("/api/labs", authLimiter, async (req, res, next) => {
 
     // The UI takes a lab straight into the admin dashboard right after
     // signup (no separate login step), so issue a session token here too.
-    const token = createSession(code);
+    const token = await createSession(code);
     res.json({ code, name: name.trim(), city: (city || "").trim(), token });
   } catch (err) {
     next(err);
   }
+});
+
+// The fixed list of security questions, for the signup dropdown
+app.get("/api/security-questions", (req, res) => {
+  res.json(SECURITY_QUESTIONS);
 });
 
 // Login to an existing lab account — issues a session token
@@ -132,7 +147,48 @@ app.post("/api/labs/:code/login", authLimiter, async (req, res, next) => {
     if (!password || !bcrypt.compareSync(password, lab.password_hash)) {
       return res.status(401).json({ error: "Incorrect password" });
     }
-    const token = createSession(lab.code);
+    const token = await createSession(lab.code);
+    res.json({ code: lab.code, name: lab.name, city: lab.city, token });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Step 1 of password reset: fetch the security question for a lab (no
+// answer, no password hash — safe to expose publicly).
+app.get("/api/labs/:code/security-question", authLimiter, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { rows } = await pool.query("SELECT security_question FROM labs WHERE code = $1", [code]);
+    const lab = rows[0];
+    if (!lab || !lab.security_question) return res.status(404).json({ error: "No lab found with that code" });
+    res.json({ question: lab.security_question });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Step 2 of password reset: verify the answer and set a new password
+app.post("/api/labs/:code/reset-password", authLimiter, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { answer, newPassword } = req.body || {};
+    if (!isValidPassword(newPassword)) return res.status(400).json({ error: "New password must be 4-72 characters" });
+
+    const { rows } = await pool.query("SELECT * FROM labs WHERE code = $1", [code]);
+    const lab = rows[0];
+    if (!lab || !lab.security_answer_hash) return res.status(404).json({ error: "No lab found with that code" });
+
+    const normalizedAnswer = (answer || "").trim().toLowerCase();
+    if (!normalizedAnswer || !bcrypt.compareSync(normalizedAnswer, lab.security_answer_hash)) {
+      return res.status(401).json({ error: "Incorrect answer" });
+    }
+
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    await pool.query("UPDATE labs SET password_hash = $1 WHERE code = $2", [newHash, code]);
+
+    // Log them straight in after a successful reset.
+    const token = await createSession(code);
     res.json({ code: lab.code, name: lab.name, city: lab.city, token });
   } catch (err) {
     next(err);

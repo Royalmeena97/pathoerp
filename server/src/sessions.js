@@ -1,45 +1,44 @@
 import crypto from "node:crypto";
-
-// In-memory session store: token -> { labCode, createdAt }
-// Simple and enough for a single-instance deploy. If you later scale to
-// multiple server instances (or want sessions to survive a restart/redeploy),
-// swap this Map for a `sessions` table in Postgres (code, token, created_at)
-// with the same get/create/destroy shape used below.
-const sessions = new Map();
+import { pool } from "./db.js";
 
 const SESSION_TTL_MS = 12 * 60 * 60 * 1000; // 12 hours
 
-export function createSession(labCode) {
+export async function createSession(labCode) {
   const token = crypto.randomBytes(24).toString("hex");
-  sessions.set(token, { labCode, createdAt: Date.now() });
+  await pool.query("INSERT INTO sessions (token, lab_code) VALUES ($1, $2)", [token, labCode]);
   return token;
 }
 
-export function getSessionLabCode(token) {
-  const session = sessions.get(token);
+export async function getSessionLabCode(token) {
+  const { rows } = await pool.query("SELECT lab_code, created_at FROM sessions WHERE token = $1", [token]);
+  const session = rows[0];
   if (!session) return null;
-  if (Date.now() - session.createdAt > SESSION_TTL_MS) {
-    sessions.delete(token);
+  if (Date.now() - new Date(session.created_at).getTime() > SESSION_TTL_MS) {
+    await pool.query("DELETE FROM sessions WHERE token = $1", [token]);
     return null;
   }
-  return session.labCode;
+  return session.lab_code;
 }
 
-export function destroySession(token) {
-  sessions.delete(token);
+export async function destroySession(token) {
+  await pool.query("DELETE FROM sessions WHERE token = $1", [token]);
 }
 
 // Auth middleware: requires a valid "x-session-token" header and that the
 // session belongs to the :code in the route. Attaches req.labCode on success.
-export function requireSession(req, res, next) {
-  const token = req.header("x-session-token");
-  const labCode = token && getSessionLabCode(token);
-  if (!labCode) return res.status(401).json({ error: "Missing or invalid session token" });
+export async function requireSession(req, res, next) {
+  try {
+    const token = req.header("x-session-token");
+    const labCode = token && (await getSessionLabCode(token));
+    if (!labCode) return res.status(401).json({ error: "Missing or invalid session token" });
 
-  const routeCode = req.params.code?.trim().toLowerCase();
-  if (routeCode && routeCode !== labCode) {
-    return res.status(401).json({ error: "Session does not match this lab" });
+    const routeCode = req.params.code?.trim().toLowerCase();
+    if (routeCode && routeCode !== labCode) {
+      return res.status(401).json({ error: "Session does not match this lab" });
+    }
+    req.labCode = labCode;
+    next();
+  } catch (err) {
+    next(err);
   }
-  req.labCode = labCode;
-  next();
 }
