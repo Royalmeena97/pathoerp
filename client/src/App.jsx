@@ -13,15 +13,16 @@ const SECURITY_QUESTIONS = [
    Design tokens
 --------------------------------------------------------- */
 const T = {
-  bg: "#F5F3EC",
-  ink: "#1C2321",
-  sub: "#5C6A63",
-  line: "#DFDBCD",
+  bg: "#F3F8F7",
+  ink: "#0F2A2C",
+  sub: "#5C7370",
+  line: "#DCE8E5",
   card: "#FFFFFF",
-  teal: "#1F4B4A",
-  amber: "#C98A3C",
-  green: "#4E7C59",
-  red: "#B5493F",
+  teal: "#0F766E",
+  tealDark: "#0B5D57",
+  amber: "#DB8A2B",
+  green: "#3F9142",
+  red: "#C1473C",
 };
 
 const inp = {
@@ -85,6 +86,83 @@ function Table({ cols, rows }) {
         </tbody>
       </table>
     </div>
+  );
+}
+
+/* ---------------------------------------------------------
+   Hero illustration — hand-built SVG, no external images,
+   so it always renders and matches the theme colors exactly.
+--------------------------------------------------------- */
+function LabIllustration() {
+  return (
+    <svg viewBox="0 0 420 420" style={{ width: "100%", maxWidth: 320, display: "block", margin: "0 auto" }} xmlns="http://www.w3.org/2000/svg">
+      <circle cx="210" cy="215" r="190" fill={T.teal} opacity="0.08" />
+      <circle cx="210" cy="215" r="150" fill={T.teal} opacity="0.10" />
+      <circle cx="70" cy="80" r="16" fill={T.amber} opacity="0.35" />
+      <circle cx="360" cy="330" r="22" fill={T.amber} opacity="0.25" />
+      <circle cx="345" cy="70" r="10" fill={T.teal} opacity="0.3" />
+
+      {/* floating medical cross badges */}
+      <g opacity="0.9">
+        <rect x="30" y="230" width="30" height="30" rx="8" fill={T.card} stroke={T.line} />
+        <rect x="42" y="238" width="6" height="14" rx="2" fill={T.red} />
+        <rect x="36" y="244" width="18" height="6" rx="2" fill={T.red} />
+      </g>
+      <g opacity="0.9">
+        <rect x="352" y="150" width="26" height="26" rx="7" fill={T.card} stroke={T.line} />
+        <rect x="362" y="157" width="6" height="12" rx="2" fill={T.teal} />
+        <rect x="357" y="162" width="16" height="6" rx="2" fill={T.teal} />
+      </g>
+
+      {/* doctor */}
+      <g>
+        {/* coat body */}
+        <path d="M120 400 C120 300 150 260 210 260 C270 260 300 300 300 400 Z" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
+        {/* coat lapels */}
+        <path d="M195 268 L210 330 L225 268" fill="none" stroke={T.line} strokeWidth="2" />
+        {/* undershirt */}
+        <path d="M198 266 C204 280 216 280 222 266 L214 300 L206 300 Z" fill={T.teal} />
+        {/* neck */}
+        <rect x="196" y="238" width="28" height="30" rx="10" fill="#E9B08A" />
+        {/* head */}
+        <circle cx="210" cy="205" r="42" fill="#F1C29A" />
+        {/* hair */}
+        <path d="M168 200 C164 160 180 138 210 138 C240 138 256 160 252 200 C244 182 228 172 210 172 C192 172 176 182 168 200 Z" fill="#3B2A20" />
+        {/* stethoscope around neck */}
+        <path d="M180 250 C180 275 168 285 158 278 C150 273 152 258 164 258" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
+        <path d="M240 250 C240 275 252 285 262 278 C270 273 268 258 256 258" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
+        <circle cx="158" cy="280" r="7" fill={T.tealDark} />
+        {/* pocket + badge */}
+        <rect x="228" y="318" width="34" height="24" rx="4" fill="none" stroke={T.line} strokeWidth="2" />
+        <circle cx="176" cy="300" r="9" fill={T.amber} opacity="0.85" />
+
+        {/* clipboard in hand */}
+        <g transform="translate(276 300) rotate(8)">
+          <rect x="0" y="0" width="56" height="72" rx="6" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
+          <rect x="18" y="-6" width="20" height="12" rx="3" fill={T.sub} />
+          <rect x="10" y="16" width="36" height="5" rx="2" fill={T.line} />
+          <rect x="10" y="28" width="36" height="5" rx="2" fill={T.line} />
+          <rect x="10" y="40" width="24" height="5" rx="2" fill={T.line} />
+          <path d="M12 54 L20 62 L34 46" fill="none" stroke={T.green} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        </g>
+
+        {/* left hand + test tube */}
+        <g transform="translate(118 300) rotate(-6)">
+          <rect x="8" y="0" width="16" height="46" rx="8" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
+          <path d="M8 8 C8 22 24 22 24 8" fill={T.teal} opacity="0.75" />
+          <rect x="6" y="-10" width="20" height="10" rx="3" fill={T.sub} />
+        </g>
+      </g>
+
+      {/* table + microscope */}
+      <rect x="40" y="352" width="340" height="10" rx="4" fill={T.line} />
+      <g transform="translate(56 296)">
+        <rect x="0" y="40" width="46" height="8" rx="3" fill={T.sub} opacity="0.5" />
+        <rect x="18" y="10" width="10" height="34" rx="3" fill={T.sub} />
+        <circle cx="23" cy="8" r="10" fill={T.tealDark} />
+        <rect x="8" y="0" width="12" height="8" rx="2" fill={T.tealDark} transform="rotate(-25 14 4)" />
+      </g>
+    </svg>
   );
 }
 
@@ -206,7 +284,7 @@ function Landing({ onLabReady, onPatientMode }) {
 
   return (
     <div style={{ background: T.bg, minHeight: "100%", color: T.ink }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 40px", borderBottom: `1px solid ${T.line}` }}>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 40px", borderBottom: `1px solid ${T.line}`, background: T.card }}>
         <div style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 700, fontSize: 19 }}>
           Nirikshan<span style={{ color: T.teal }}>Lab</span>
         </div>
@@ -215,23 +293,33 @@ function Landing({ onLabReady, onPatientMode }) {
         </button>
       </header>
 
-      <section style={{ display: "flex", gap: 50, padding: "60px 40px", flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ flex: "1 1 380px", minWidth: 300 }}>
+      <section style={{
+        display: "flex", gap: 36, padding: "60px 40px", flexWrap: "wrap", alignItems: "center",
+        background: `linear-gradient(180deg, ${T.teal}10 0%, ${T.bg} 65%)`,
+      }}>
+        <div style={{ flex: "1 1 380px", minWidth: 280 }}>
+          <div style={{ display: "inline-block", background: `${T.amber}1c`, color: T.amber, fontWeight: 700, fontSize: 11.5, letterSpacing: 0.6, textTransform: "uppercase", padding: "5px 12px", borderRadius: 999, marginBottom: 16 }}>
+            For pathology labs & diagnostic centres
+          </div>
           <h1 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontSize: 38, lineHeight: 1.15, fontWeight: 600, letterSpacing: -0.5, margin: 0 }}>
             Run your pathology lab without the paper trail.
           </h1>
-          <p style={{ fontSize: 15.5, color: T.sub, marginTop: 16, lineHeight: 1.6, maxWidth: 460 }}>
-            Registration, sample tracking, billing and a patient booking page — one account per lab,
-            data saved to a real database on the server.
+          <p style={{ fontSize: 15.5, color: T.sub, marginTop: 16, lineHeight: 1.6, maxWidth: 440 }}>
+            Registration, sample tracking, billing, doctor referrals and a patient booking page — one
+            account per lab, data saved to a real database on the server.
           </p>
-          <div style={{ display: "flex", gap: 28, marginTop: 30, color: T.sub, fontSize: 13.5 }}>
+          <div style={{ display: "flex", gap: 28, marginTop: 30, color: T.sub, fontSize: 13.5, flexWrap: "wrap" }}>
             <div><b style={{ color: T.ink }}>Free</b> to try</div>
             <div><b style={{ color: T.ink }}>Password</b> protected</div>
             <div><b style={{ color: T.ink }}>Multi-lab</b> ready</div>
           </div>
         </div>
 
-        <div style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: 24 }}>
+        <div style={{ flex: "1 1 260px", minWidth: 220, maxWidth: 320 }}>
+          <LabIllustration />
+        </div>
+
+        <div style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 14, padding: 24, boxShadow: "0 12px 32px -18px rgba(15,42,44,0.35)" }}>
           {mode !== "forgot" && mode !== "staff" && (
             <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
               {[["new", "Start a new lab"], ["existing", "I already have a lab"]].map(([k, l]) => (
