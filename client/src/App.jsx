@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createLab, loginLab, staffLogin, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, addDoctor, getReferrals, changePassword, getSecurityQuestion, resetPassword, getAnalytics, getStaffList, addStaff, removeStaff, downloadReport, clearSession } from "./api.js";
+import { createLab, loginLab, staffLogin, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, addDoctor, getReferrals, changePassword, getSecurityQuestion, resetPassword, getAnalytics, getStaffList, addStaff, removeStaff, downloadReport, downloadPatientsCsv, clearSession } from "./api.js";
 
 // Must match server/src/db.js SECURITY_QUESTIONS exactly.
 const SECURITY_QUESTIONS = [
@@ -39,6 +39,14 @@ const inp = {
 /* ---------------------------------------------------------
    Shared bits
 --------------------------------------------------------- */
+function groupBy(arr, key) {
+  return arr.reduce((acc, item) => {
+    const k = item[key] || "General";
+    (acc[k] = acc[k] || []).push(item);
+    return acc;
+  }, {});
+}
+
 function StatusPill({ status }) {
   const map = { "Report Ready": T.green, Pending: T.amber, "Sample Collected": T.teal };
   const c = map[status] || T.sub;
@@ -368,7 +376,9 @@ function LabAdmin({ labCode, role, back }) {
   const [form, setForm] = useState({ name: "", age: "", phone: "", test: "", doctorId: "" });
   const [saving, setSaving] = useState(false);
   const [patientSearch, setPatientSearch] = useState("");
-  const [testForm, setTestForm] = useState({ code: "", name: "", price: "", tat: "Same day" });
+  const [dateFilter, setDateFilter] = useState("all");
+  const [patientPage, setPatientPage] = useState(0);
+  const [testForm, setTestForm] = useState({ code: "", name: "", price: "", tat: "Same day", category: "General" });
   const [testFormErr, setTestFormErr] = useState("");
   const [editingTest, setEditingTest] = useState(null); // test code being price-edited
   const [editPrice, setEditPrice] = useState("");
@@ -507,9 +517,10 @@ function LabAdmin({ labCode, role, back }) {
         name: testForm.name.trim(),
         price: Number(testForm.price),
         tat: testForm.tat,
+        category: testForm.category.trim() || "General",
       });
       await refresh();
-      setTestForm({ code: "", name: "", price: "", tat: "Same day" });
+      setTestForm({ code: "", name: "", price: "", tat: "Same day", category: "General" });
     } catch (e2) {
       setTestFormErr(e2.message);
     } finally {
@@ -644,7 +655,11 @@ function LabAdmin({ labCode, role, back }) {
               </div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Test
                 <select style={inp} value={form.test} onChange={(e) => setForm({ ...form, test: e.target.value })}>
-                  {lab.tests.map((t) => <option key={t.code} value={t.code}>{t.name} — ₹{t.price}</option>)}
+                  {Object.entries(groupBy(lab.tests, "category")).map(([cat, ts]) => (
+                    <optgroup key={cat} label={cat}>
+                      {ts.map((t) => <option key={t.code} value={t.code}>{t.name} — ₹{t.price}</option>)}
+                    </optgroup>
+                  ))}
                 </select>
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Referring doctor <span style={{ fontWeight: 400 }}>(optional)</span>
@@ -680,77 +695,120 @@ function LabAdmin({ labCode, role, back }) {
 
         {tab === "patients" && (
           <>
-            <h2 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 12px" }}>Patients</h2>
-            <input
-              style={{ ...inp, maxWidth: 280, marginBottom: 14 }}
-              value={patientSearch}
-              onChange={(e) => setPatientSearch(e.target.value)}
-              placeholder="Search by name, ID or phone..."
-            />
-            <Table
-              cols={["ID", "Name", "Test", "Doctor", "Status", "Due", ""]}
-              rows={lab.patients
-                .filter((p) => {
-                  const q = patientSearch.trim().toLowerCase();
-                  if (!q) return true;
-                  return (
-                    p.name.toLowerCase().includes(q) ||
-                    p.id.toLowerCase().includes(q) ||
-                    (p.phone || "").includes(q)
-                  );
-                })
-                .map((p) => [
-                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5 }}>{p.id}</span>,
-                p.name,
-                lab.tests.find((t) => t.code === p.test)?.name || p.test,
-                p.doctor_name || <span style={{ color: T.sub }}>Walk-in</span>,
-                <StatusPill status={p.status} />,
-                p.due ? "₹" + p.due : "—",
-                p.status !== "Report Ready" ? (
-                  <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 160 }}>
-                    <input
-                      style={{ ...inp, marginTop: 0, fontSize: 12 }}
-                      placeholder="Result notes (optional)"
-                      value={resultDrafts[p.id] || ""}
-                      onChange={(e) => setResultDrafts({ ...resultDrafts, [p.id]: e.target.value })}
-                    />
-                    <button onClick={() => markReady(p.id)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Mark ready</button>
-                  </div>
-                ) : (
-                  <button onClick={() => downloadReportHandler(p.id)} style={{ fontSize: 12, border: `1px solid ${T.teal}`, color: T.teal, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>Download report</button>
-                ),
-              ])}
-            />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+              <h2 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: 0 }}>Patients</h2>
+              <button onClick={() => downloadPatientsCsv(labCode)} style={{ fontSize: 12.5, border: `1px solid ${T.line}`, background: "transparent", padding: "7px 14px", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>
+                Export CSV
+              </button>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+              <input
+                style={{ ...inp, maxWidth: 260, marginTop: 0 }}
+                value={patientSearch}
+                onChange={(e) => { setPatientSearch(e.target.value); setPatientPage(0); }}
+                placeholder="Search by name, ID or phone..."
+              />
+              <div style={{ display: "flex", gap: 6 }}>
+                {[["all", "All time"], ["today", "Today"], ["week", "This week"], ["month", "This month"]].map(([k, l]) => (
+                  <button key={k} onClick={() => { setDateFilter(k); setPatientPage(0); }} style={{
+                    fontSize: 12, padding: "6px 11px", borderRadius: 6, cursor: "pointer",
+                    border: `1px solid ${T.line}`, background: dateFilter === k ? T.teal : "transparent", color: dateFilter === k ? "#fff" : T.ink,
+                  }}>{l}</button>
+                ))}
+              </div>
+            </div>
+            {(() => {
+              const now = new Date();
+              const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+              const startOfWeek = new Date(startOfToday); startOfWeek.setDate(startOfWeek.getDate() - startOfWeek.getDay());
+              const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+              const cutoffs = { today: startOfToday, week: startOfWeek, month: startOfMonth };
+
+              const filtered = lab.patients.filter((p) => {
+                const q = patientSearch.trim().toLowerCase();
+                const matchesSearch = !q || p.name.toLowerCase().includes(q) || p.id.toLowerCase().includes(q) || (p.phone || "").includes(q);
+                const matchesDate = dateFilter === "all" || new Date(p.created_at) >= cutoffs[dateFilter];
+                return matchesSearch && matchesDate;
+              });
+
+              const pageSize = 15;
+              const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+              const page = Math.min(patientPage, pageCount - 1);
+              const pageRows = filtered.slice(page * pageSize, page * pageSize + pageSize);
+
+              return (
+                <>
+                  <Table
+                    cols={["ID", "Name", "Test", "Doctor", "Status", "Due", ""]}
+                    rows={pageRows.map((p) => [
+                      <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5 }}>{p.id}</span>,
+                      p.name,
+                      lab.tests.find((t) => t.code === p.test)?.name || p.test,
+                      p.doctor_name || <span style={{ color: T.sub }}>Walk-in</span>,
+                      <StatusPill status={p.status} />,
+                      p.due ? "₹" + p.due : "—",
+                      p.status !== "Report Ready" ? (
+                        <div style={{ display: "flex", flexDirection: "column", gap: 5, minWidth: 160 }}>
+                          <input
+                            style={{ ...inp, marginTop: 0, fontSize: 12 }}
+                            placeholder="Result notes (optional)"
+                            value={resultDrafts[p.id] || ""}
+                            onChange={(e) => setResultDrafts({ ...resultDrafts, [p.id]: e.target.value })}
+                          />
+                          <button onClick={() => markReady(p.id)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Mark ready</button>
+                        </div>
+                      ) : (
+                        <button onClick={() => downloadReportHandler(p.id)} style={{ fontSize: 12, border: `1px solid ${T.teal}`, color: T.teal, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer", fontWeight: 600 }}>Download report</button>
+                      ),
+                    ])}
+                  />
+                  {filtered.length > pageSize && (
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, fontSize: 12.5, color: T.sub }}>
+                      <span>Showing {page * pageSize + 1}-{Math.min(filtered.length, (page + 1) * pageSize)} of {filtered.length}</span>
+                      <div style={{ display: "flex", gap: 6 }}>
+                        <button disabled={page === 0} onClick={() => setPatientPage(page - 1)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 12px", borderRadius: 6, cursor: page === 0 ? "default" : "pointer", opacity: page === 0 ? 0.4 : 1 }}>← Prev</button>
+                        <button disabled={page >= pageCount - 1} onClick={() => setPatientPage(page + 1)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 12px", borderRadius: 6, cursor: page >= pageCount - 1 ? "default" : "pointer", opacity: page >= pageCount - 1 ? 0.4 : 1 }}>Next →</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              );
+            })()}
           </>
         )}
 
         {tab === "tests" && (
           <>
             <h2 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 18px" }}>Test Master</h2>
-            <Table cols={isAdmin ? ["Code", "Test name", "Price", "Turnaround", ""] : ["Code", "Test name", "Price", "Turnaround"]} rows={lab.tests.map((t) => {
-              const row = [
-                <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5 }}>{t.code}</span>,
-                t.name,
-                editingTest === t.code ? (
-                  <input
-                    autoFocus
-                    style={{ ...inp, marginTop: 0, width: 90, display: "inline-block" }}
-                    value={editPrice}
-                    onChange={(e) => setEditPrice(e.target.value)}
-                    onKeyDown={(e) => e.key === "Enter" && saveTestPrice(t.code)}
-                  />
-                ) : ("₹" + t.price),
-                t.tat,
-              ];
-              if (isAdmin) {
-                row.push(editingTest === t.code ? (
-                  <button onClick={() => saveTestPrice(t.code)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: T.teal, color: "#fff", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Save</button>
-                ) : (
-                  <button onClick={() => { setEditingTest(t.code); setEditPrice(String(t.price)); }} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Edit price</button>
-                ));
-              }
-              return row;
-            })} />
+            {Object.entries(groupBy(lab.tests, "category")).map(([cat, ts]) => (
+              <div key={cat} style={{ marginBottom: 18 }}>
+                <div style={{ fontSize: 12.5, fontWeight: 700, color: T.sub, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.4 }}>{cat}</div>
+                <Table cols={isAdmin ? ["Code", "Test name", "Price", "Turnaround", ""] : ["Code", "Test name", "Price", "Turnaround"]} rows={ts.map((t) => {
+                  const row = [
+                    <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12.5 }}>{t.code}</span>,
+                    t.name,
+                    editingTest === t.code ? (
+                      <input
+                        autoFocus
+                        style={{ ...inp, marginTop: 0, width: 90, display: "inline-block" }}
+                        value={editPrice}
+                        onChange={(e) => setEditPrice(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && saveTestPrice(t.code)}
+                      />
+                    ) : ("₹" + t.price),
+                    t.tat,
+                  ];
+                  if (isAdmin) {
+                    row.push(editingTest === t.code ? (
+                      <button onClick={() => saveTestPrice(t.code)} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: T.teal, color: "#fff", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Save</button>
+                    ) : (
+                      <button onClick={() => { setEditingTest(t.code); setEditPrice(String(t.price)); }} style={{ fontSize: 12, border: `1px solid ${T.line}`, background: "transparent", padding: "5px 10px", borderRadius: 6, cursor: "pointer" }}>Edit price</button>
+                    ));
+                  }
+                  return row;
+                })} />
+              </div>
+            ))}
 
             {isAdmin && (
             <>
@@ -767,13 +825,21 @@ function LabAdmin({ labCode, role, back }) {
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Test name
                 <input style={inp} value={testForm.name} onChange={(e) => setTestForm({ ...testForm, name: e.target.value })} placeholder="e.g. HbA1c (Diabetes)" />
               </label>
-              <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Turnaround time
-                <select style={inp} value={testForm.tat} onChange={(e) => setTestForm({ ...testForm, tat: e.target.value })}>
-                  <option>Same day</option>
-                  <option>Next day</option>
-                  <option>2-3 days</option>
-                </select>
-              </label>
+              <div style={{ display: "flex", gap: 12 }}>
+                <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Category
+                  <input style={inp} list="category-options" value={testForm.category} onChange={(e) => setTestForm({ ...testForm, category: e.target.value })} placeholder="e.g. Blood Tests" />
+                  <datalist id="category-options">
+                    {Object.keys(groupBy(lab.tests, "category")).map((c) => <option key={c} value={c} />)}
+                  </datalist>
+                </label>
+                <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Turnaround time
+                  <select style={inp} value={testForm.tat} onChange={(e) => setTestForm({ ...testForm, tat: e.target.value })}>
+                    <option>Same day</option>
+                    <option>Next day</option>
+                    <option>2-3 days</option>
+                  </select>
+                </label>
+              </div>
               <button type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "10px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 Add test
               </button>

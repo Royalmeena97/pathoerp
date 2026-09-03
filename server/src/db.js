@@ -108,13 +108,17 @@ export async function initSchema() {
   // Free-text result notes, filled in when a report is marked ready — used
   // to generate the downloadable PDF report.
   await pool.query(`ALTER TABLE patients ADD COLUMN IF NOT EXISTS result TEXT;`);
+
+  // Groups tests in the UI (e.g. "Blood Tests", "Urine Tests") once a lab's
+  // test menu grows. Existing tests default to "General".
+  await pool.query(`ALTER TABLE tests ADD COLUMN IF NOT EXISTS category TEXT NOT NULL DEFAULT 'General';`);
 }
 
 export const DEFAULT_TESTS = [
-  { code: "CBC-01", name: "Complete Blood Count", price: 250, tat: "Same day" },
-  { code: "LFT-02", name: "Liver Function Test", price: 600, tat: "Same day" },
-  { code: "TSH-03", name: "Thyroid Profile (TSH)", price: 350, tat: "Next day" },
-  { code: "LIP-04", name: "Lipid Profile", price: 500, tat: "Same day" },
+  { code: "CBC-01", name: "Complete Blood Count", price: 250, tat: "Same day", category: "Blood Tests" },
+  { code: "LFT-02", name: "Liver Function Test", price: 600, tat: "Same day", category: "Blood Tests" },
+  { code: "TSH-03", name: "Thyroid Profile (TSH)", price: 350, tat: "Next day", category: "Hormone Tests" },
+  { code: "LIP-04", name: "Lipid Profile", price: 500, tat: "Same day", category: "Blood Tests" },
 ];
 
 // Fixed list so both the signup dropdown and the reset flow stay in sync.

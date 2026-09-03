@@ -66,7 +66,7 @@ async function slugify(name) {
 
 async function getTests(labCode) {
   const { rows } = await pool.query(
-    "SELECT code, name, price, tat FROM tests WHERE lab_code = $1 ORDER BY id",
+    "SELECT code, name, price, tat, category FROM tests WHERE lab_code = $1 ORDER BY category, id",
     [labCode]
   );
   return rows;
@@ -74,7 +74,7 @@ async function getTests(labCode) {
 async function getPatients(labCode) {
   const { rows } = await pool.query(
     `SELECT p.id, p.name, p.age, p.phone, p.test_code as test, p.status, p.due, p.amount, p.result,
-            p.doctor_id, d.name as doctor_name
+            p.doctor_id, d.name as doctor_name, p.created_at
      FROM patients p
      LEFT JOIN doctors d ON p.doctor_id = d.id
      WHERE p.lab_code = $1
@@ -122,8 +122,8 @@ app.post("/api/labs", authLimiter, async (req, res, next) => {
       );
       for (const t of DEFAULT_TESTS) {
         await client.query(
-          "INSERT INTO tests (lab_code, code, name, price, tat) VALUES ($1, $2, $3, $4, $5)",
-          [code, t.code, t.name, t.price, t.tat]
+          "INSERT INTO tests (lab_code, code, name, price, tat, category) VALUES ($1, $2, $3, $4, $5, $6)",
+          [code, t.code, t.name, t.price, t.tat, t.category]
         );
       }
       await client.query("COMMIT");
@@ -300,7 +300,7 @@ app.post("/api/labs/:code/change-password", requireSession, requireAdmin, authLi
 app.post("/api/labs/:code/tests", requireSession, requireAdmin, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
-    const { code: testCode, name, price, tat } = req.body || {};
+    const { code: testCode, name, price, tat, category } = req.body || {};
     if (!testCode || !testCode.trim()) return res.status(400).json({ error: "Test code is required" });
     if (!isValidName(name)) return res.status(400).json({ error: "Test name must be 2-80 characters" });
     if (!isValidPrice(price)) return res.status(400).json({ error: "Price must be a whole number, 0 or more" });
@@ -311,22 +311,23 @@ app.post("/api/labs/:code/tests", requireSession, requireAdmin, async (req, res,
     );
     if (existing.length) return res.status(409).json({ error: "A test with this code already exists" });
 
+    const cleanCategory = (category || "").trim().slice(0, 40) || "General";
     await pool.query(
-      "INSERT INTO tests (lab_code, code, name, price, tat) VALUES ($1, $2, $3, $4, $5)",
-      [code, testCode.trim(), name.trim(), price, (tat || "").trim().slice(0, 40) || "Same day"]
+      "INSERT INTO tests (lab_code, code, name, price, tat, category) VALUES ($1, $2, $3, $4, $5, $6)",
+      [code, testCode.trim(), name.trim(), price, (tat || "").trim().slice(0, 40) || "Same day", cleanCategory]
     );
-    res.json({ code: testCode.trim(), name: name.trim(), price, tat: (tat || "Same day") });
+    res.json({ code: testCode.trim(), name: name.trim(), price, tat: (tat || "Same day"), category: cleanCategory });
   } catch (err) {
     next(err);
   }
 });
 
-// Edit an existing test (price / name / turnaround)
+// Edit an existing test (price / name / turnaround / category)
 app.patch("/api/labs/:code/tests/:testCode", requireSession, requireAdmin, async (req, res, next) => {
   try {
     const code = req.params.code.trim().toLowerCase();
     const testCode = req.params.testCode;
-    const { name, price, tat } = req.body || {};
+    const { name, price, tat, category } = req.body || {};
 
     const { rows } = await pool.query("SELECT * FROM tests WHERE lab_code = $1 AND code = $2", [code, testCode]);
     const test = rows[0];
@@ -335,14 +336,15 @@ app.patch("/api/labs/:code/tests/:testCode", requireSession, requireAdmin, async
     const nextName = name !== undefined ? name : test.name;
     const nextPrice = price !== undefined ? price : test.price;
     const nextTat = tat !== undefined ? tat : test.tat;
+    const nextCategory = category !== undefined ? category : test.category;
     if (!isValidName(nextName)) return res.status(400).json({ error: "Test name must be 2-80 characters" });
     if (!isValidPrice(nextPrice)) return res.status(400).json({ error: "Price must be a whole number, 0 or more" });
 
     await pool.query(
-      "UPDATE tests SET name = $1, price = $2, tat = $3 WHERE lab_code = $4 AND code = $5",
-      [nextName.trim(), nextPrice, (nextTat || "").trim().slice(0, 40), code, testCode]
+      "UPDATE tests SET name = $1, price = $2, tat = $3, category = $4 WHERE lab_code = $5 AND code = $6",
+      [nextName.trim(), nextPrice, (nextTat || "").trim().slice(0, 40), (nextCategory || "General").trim().slice(0, 40) || "General", code, testCode]
     );
-    res.json({ code: testCode, name: nextName.trim(), price: nextPrice, tat: nextTat });
+    res.json({ code: testCode, name: nextName.trim(), price: nextPrice, tat: nextTat, category: nextCategory });
   } catch (err) {
     next(err);
   }
@@ -569,6 +571,36 @@ app.get("/api/labs/:code/patients/:id/report", requireSession, async (req, res, 
     const test = testRows[0];
 
     streamPatientReport(res, { lab, patient, test, doctorName: patient.doctor_name });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// CSV export of the patients list (works for both the Patients and Billing
+// views — the client just downloads whichever rows it already has).
+app.get("/api/labs/:code/patients/export.csv", requireSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const patients = await getPatients(code);
+    const tests = await getTests(code);
+    const testName = (c) => tests.find((t) => t.code === c)?.name || c;
+
+    const escape = (v) => {
+      const s = v === null || v === undefined ? "" : String(v);
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+    const header = ["Patient ID", "Name", "Age", "Phone", "Test", "Referring Doctor", "Status", "Amount", "Due", "Registered On"];
+    const lines = [header.join(",")];
+    for (const p of patients) {
+      lines.push([
+        p.id, p.name, p.age, p.phone, testName(p.test), p.doctor_name || "Walk-in",
+        p.status, p.amount, p.due, new Date(p.created_at).toLocaleDateString("en-IN"),
+      ].map(escape).join(","));
+    }
+
+    res.setHeader("Content-Type", "text/csv");
+    res.setHeader("Content-Disposition", `attachment; filename="patients-${code}.csv"`);
+    res.send(lines.join("\n"));
   } catch (err) {
     next(err);
   }

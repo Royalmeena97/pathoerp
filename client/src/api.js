@@ -192,3 +192,21 @@ export async function downloadReport(code, patientId) {
   window.open(url, "_blank");
   setTimeout(() => URL.revokeObjectURL(url), 30000);
 }
+
+// Downloads the patients CSV export and triggers a browser save.
+export async function downloadPatientsCsv(code) {
+  const res = await fetch(`${BASE}/labs/${code}/patients/export.csv`, { headers: { ...authHeaders() } });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Could not export the patient list");
+  }
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `patients-${code}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
