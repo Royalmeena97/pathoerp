@@ -7,7 +7,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import bcrypt from "bcryptjs";
 import { pool, initSchema, DEFAULT_TESTS, SECURITY_QUESTIONS } from "./db.js";
-import { createSession, requireSession, requireAdmin } from "./sessions.js";
+import { createSession, requireSession, requireAdmin, createOwnerSession, requireOwnerSession } from "./sessions.js";
 import { isValidPhone, isValidName, isValidPassword, isValidPrice, isValidCommission } from "./validation.js";
 import { streamPatientReport } from "./report.js";
 
@@ -96,29 +96,31 @@ async function getDoctors(labCode) {
 // Create a new lab account
 app.post("/api/labs", authLimiter, async (req, res, next) => {
   try {
-    const { name, city, password, securityQuestion, securityAnswer } = req.body || {};
+    const { name, city, password } = req.body || {};
     if (!isValidName(name)) return res.status(400).json({ error: "Lab name must be 2-80 characters" });
     if (!isValidPassword(password)) return res.status(400).json({ error: "Password must be 4-72 characters" });
-    if (!SECURITY_QUESTIONS.includes(securityQuestion)) {
-      return res.status(400).json({ error: "Please choose a valid security question" });
-    }
-    if (!securityAnswer || !securityAnswer.trim()) {
-      return res.status(400).json({ error: "A security answer is required (used to reset your password later)" });
+
+    // Lab name is now the login identifier, so it has to be unique — this
+    // is also what lets people log in without ever needing a "lab code".
+    const { rows: dup } = await pool.query("SELECT 1 FROM labs WHERE LOWER(name) = LOWER($1)", [name.trim()]);
+    if (dup.length) {
+      return res.status(409).json({ error: "This lab is already registered. Try logging in instead." });
     }
 
     const code = await slugify(name);
     const passwordHash = bcrypt.hashSync(password, 10);
-    // Answers are normalized (trimmed + lowercased) before hashing so "Delhi"
-    // and "delhi " both match later.
-    const answerHash = bcrypt.hashSync(securityAnswer.trim().toLowerCase(), 10);
 
     const client = await pool.connect();
     try {
       await client.query("BEGIN");
+      // security_question / security_answer_hash are left NULL here — the
+      // client prompts for them as a short follow-up step right after
+      // signup (see /api/labs/:code/security-question-setup below), not on
+      // the signup form itself.
       await client.query(
-        `INSERT INTO labs (code, name, city, password_hash, security_question, security_answer_hash)
-         VALUES ($1, $2, $3, $4, $5, $6)`,
-        [code, name.trim(), (city || "").trim().slice(0, 80), passwordHash, securityQuestion, answerHash]
+        `INSERT INTO labs (code, name, city, password_hash)
+         VALUES ($1, $2, $3, $4)`,
+        [code, name.trim(), (city || "").trim().slice(0, 80), passwordHash]
       );
       for (const t of DEFAULT_TESTS) {
         await client.query(
@@ -129,6 +131,11 @@ app.post("/api/labs", authLimiter, async (req, res, next) => {
       await client.query("COMMIT");
     } catch (e) {
       await client.query("ROLLBACK");
+      // 23505 = unique_violation — covers a race where two signups for the
+      // same name land at the same instant and both pass the check above.
+      if (e.code === "23505") {
+        return res.status(409).json({ error: "This lab is already registered. Try logging in instead." });
+      }
       throw e;
     } finally {
       client.release();
@@ -137,7 +144,31 @@ app.post("/api/labs", authLimiter, async (req, res, next) => {
     // The UI takes a lab straight into the admin dashboard right after
     // signup (no separate login step), so issue a session token here too.
     const token = await createSession(code);
-    res.json({ code, name: name.trim(), city: (city || "").trim(), token, role: "admin" });
+    res.json({ code, name: name.trim(), city: (city || "").trim(), token, role: "admin", needsSecurityQuestion: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Follow-up step right after signup: set the security question that will
+// be used later if this lab's owner forgets their password. Kept off the
+// main signup form on purpose, so that form stays short.
+app.post("/api/labs/:code/security-question-setup", requireSession, requireAdmin, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { securityQuestion, securityAnswer } = req.body || {};
+    if (!SECURITY_QUESTIONS.includes(securityQuestion)) {
+      return res.status(400).json({ error: "Please choose a valid security question" });
+    }
+    if (!securityAnswer || !securityAnswer.trim()) {
+      return res.status(400).json({ error: "A security answer is required (used to reset your password later)" });
+    }
+    const answerHash = bcrypt.hashSync(securityAnswer.trim().toLowerCase(), 10);
+    await pool.query(
+      "UPDATE labs SET security_question = $1, security_answer_hash = $2 WHERE code = $3",
+      [securityQuestion, answerHash, code]
+    );
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }
@@ -148,48 +179,51 @@ app.get("/api/security-questions", (req, res) => {
   res.json(SECURITY_QUESTIONS);
 });
 
-// Login to an existing lab account — issues a session token
-app.post("/api/labs/:code/login", authLimiter, async (req, res, next) => {
+// Login to an existing lab account — issues a session token.
+// :identifier is the lab NAME now (not the internal code), since that's
+// what people actually remember. Case-insensitive match.
+app.post("/api/labs/:identifier/login", authLimiter, async (req, res, next) => {
   try {
-    const code = req.params.code.trim().toLowerCase();
+    const identifier = req.params.identifier.trim();
     const { password } = req.body || {};
-    const { rows } = await pool.query("SELECT * FROM labs WHERE code = $1", [code]);
+    const { rows } = await pool.query("SELECT * FROM labs WHERE LOWER(name) = LOWER($1)", [identifier]);
     const lab = rows[0];
-    if (!lab) return res.status(404).json({ error: "No lab found with that code" });
+    if (!lab) return res.status(404).json({ error: "No lab found with that name" });
     if (!password || !bcrypt.compareSync(password, lab.password_hash)) {
       return res.status(401).json({ error: "Incorrect password" });
     }
     const token = await createSession(lab.code);
-    res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "admin" });
+    res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "admin", needsSecurityQuestion: !lab.security_question });
   } catch (err) {
     next(err);
   }
 });
 
 // Step 1 of password reset: fetch the security question for a lab (no
-// answer, no password hash — safe to expose publicly).
-app.get("/api/labs/:code/security-question", authLimiter, async (req, res, next) => {
+// answer, no password hash — safe to expose publicly). Looked up by name.
+app.get("/api/labs/:identifier/security-question", authLimiter, async (req, res, next) => {
   try {
-    const code = req.params.code.trim().toLowerCase();
-    const { rows } = await pool.query("SELECT security_question FROM labs WHERE code = $1", [code]);
+    const identifier = req.params.identifier.trim();
+    const { rows } = await pool.query("SELECT security_question FROM labs WHERE LOWER(name) = LOWER($1)", [identifier]);
     const lab = rows[0];
-    if (!lab || !lab.security_question) return res.status(404).json({ error: "No lab found with that code" });
+    if (!lab || !lab.security_question) return res.status(404).json({ error: "No lab found with that name, or it hasn't set up a security question yet" });
     res.json({ question: lab.security_question });
   } catch (err) {
     next(err);
   }
 });
 
-// Step 2 of password reset: verify the answer and set a new password
-app.post("/api/labs/:code/reset-password", authLimiter, async (req, res, next) => {
+// Step 2 of password reset: verify the answer and set a new password.
+// Looked up by name.
+app.post("/api/labs/:identifier/reset-password", authLimiter, async (req, res, next) => {
   try {
-    const code = req.params.code.trim().toLowerCase();
+    const identifier = req.params.identifier.trim();
     const { answer, newPassword } = req.body || {};
     if (!isValidPassword(newPassword)) return res.status(400).json({ error: "New password must be 4-72 characters" });
 
-    const { rows } = await pool.query("SELECT * FROM labs WHERE code = $1", [code]);
+    const { rows } = await pool.query("SELECT * FROM labs WHERE LOWER(name) = LOWER($1)", [identifier]);
     const lab = rows[0];
-    if (!lab || !lab.security_answer_hash) return res.status(404).json({ error: "No lab found with that code" });
+    if (!lab || !lab.security_answer_hash) return res.status(404).json({ error: "No lab found with that name" });
 
     const normalizedAnswer = (answer || "").trim().toLowerCase();
     if (!normalizedAnswer || !bcrypt.compareSync(normalizedAnswer, lab.security_answer_hash)) {
@@ -197,10 +231,10 @@ app.post("/api/labs/:code/reset-password", authLimiter, async (req, res, next) =
     }
 
     const newHash = bcrypt.hashSync(newPassword, 10);
-    await pool.query("UPDATE labs SET password_hash = $1 WHERE code = $2", [newHash, code]);
+    await pool.query("UPDATE labs SET password_hash = $1 WHERE code = $2", [newHash, lab.code]);
 
     // Log them straight in after a successful reset.
-    const token = await createSession(code);
+    const token = await createSession(lab.code);
     res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "admin" });
   } catch (err) {
     next(err);
@@ -444,23 +478,25 @@ app.delete("/api/labs/:code/staff/:id", requireSession, requireAdmin, async (req
   }
 });
 
-// Staff login — separate from the owner login above, issues a 'staff' session
-app.post("/api/labs/:code/staff-login", authLimiter, async (req, res, next) => {
+// Staff login — separate from the owner login above, issues a 'staff' session.
+// :identifier is the lab NAME, same as owner login.
+app.post("/api/labs/:identifier/staff-login", authLimiter, async (req, res, next) => {
   try {
-    const code = req.params.code.trim().toLowerCase();
+    const identifier = req.params.identifier.trim();
     const { username, password } = req.body || {};
+    const { rows: labRows } = await pool.query("SELECT code, name, city FROM labs WHERE LOWER(name) = LOWER($1)", [identifier]);
+    const lab = labRows[0];
+    if (!lab) return res.status(404).json({ error: "No lab found with that name" });
+
     const cleanUsername = (username || "").trim().toLowerCase();
-    const { rows } = await pool.query("SELECT * FROM staff WHERE lab_code = $1 AND username = $2", [code, cleanUsername]);
+    const { rows } = await pool.query("SELECT * FROM staff WHERE lab_code = $1 AND username = $2", [lab.code, cleanUsername]);
     const staffAccount = rows[0];
     if (!staffAccount || !password || !bcrypt.compareSync(password, staffAccount.password_hash)) {
       return res.status(401).json({ error: "Incorrect username or password" });
     }
-    const { rows: labRows } = await pool.query("SELECT name, city FROM labs WHERE code = $1", [code]);
-    const lab = labRows[0];
-    if (!lab) return res.status(404).json({ error: "Lab not found" });
 
-    const token = await createSession(code, "staff", staffAccount.id);
-    res.json({ code, name: lab.name, city: lab.city, token, role: "staff" });
+    const token = await createSession(lab.code, "staff", staffAccount.id);
+    res.json({ code: lab.code, name: lab.name, city: lab.city, token, role: "staff" });
   } catch (err) {
     next(err);
   }
@@ -601,6 +637,103 @@ app.get("/api/labs/:code/patients/export.csv", requireSession, async (req, res, 
     res.setHeader("Content-Type", "text/csv");
     res.setHeader("Content-Disposition", `attachment; filename="patients-${code}.csv"`);
     res.send(lines.join("\n"));
+  } catch (err) {
+    next(err);
+  }
+});
+
+/* ---------- platform owner panel (hidden super-admin, not linked from the UI) ---------- */
+// Set OWNER_PASSWORD as an environment variable on your host (Railway →
+// Variables). This is separate from any lab's password.
+const OWNER_PASSWORD = process.env.OWNER_PASSWORD || null;
+if (!OWNER_PASSWORD) {
+  console.warn("WARNING: OWNER_PASSWORD is not set — the owner panel login will always fail until you set it.");
+}
+
+app.post("/api/owner/login", authLimiter, async (req, res, next) => {
+  try {
+    const { password } = req.body || {};
+    if (!OWNER_PASSWORD || !password || password !== OWNER_PASSWORD) {
+      return res.status(401).json({ error: "Incorrect password" });
+    }
+    const token = await createOwnerSession();
+    res.json({ token });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// All labs, with a couple of at-a-glance counts — used for the owner's
+// lab list and for account recovery (find a lab, then reset its password).
+app.get("/api/owner/labs", requireOwnerSession, async (req, res, next) => {
+  try {
+    const { rows } = await pool.query(
+      `SELECT l.code, l.name, l.city, l.created_at, (l.security_question IS NOT NULL) AS has_security_question,
+              (SELECT COUNT(*) FROM patients p WHERE p.lab_code = l.code)::int AS patient_count,
+              (SELECT COUNT(*) FROM staff s WHERE s.lab_code = l.code)::int AS staff_count
+       FROM labs l
+       ORDER BY l.created_at DESC`
+    );
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Passwords are hashed (bcrypt), so the original can never be shown again —
+// this sets a brand-new one instead, which the owner then shares with the
+// lab. That's the real-world equivalent of "recovering" access.
+app.post("/api/owner/labs/:code/reset-password", requireOwnerSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { newPassword } = req.body || {};
+    if (!isValidPassword(newPassword)) return res.status(400).json({ error: "New password must be 4-72 characters" });
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    const { rowCount } = await pool.query("UPDATE labs SET password_hash = $1 WHERE code = $2", [newHash, code]);
+    if (!rowCount) return res.status(404).json({ error: "Lab not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Deletes a lab and everything under it (tests, patients, doctors, staff,
+// sessions all cascade via their foreign keys). Irreversible.
+app.delete("/api/owner/labs/:code", requireOwnerSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { rowCount } = await pool.query("DELETE FROM labs WHERE code = $1", [code]);
+    if (!rowCount) return res.status(404).json({ error: "Lab not found" });
+    res.json({ ok: true });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Staff usernames for one lab, plus the ability to reset a staff member's
+// password the same way as above.
+app.get("/api/owner/labs/:code/staff", requireOwnerSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { rows } = await pool.query("SELECT id, username, created_at FROM staff WHERE lab_code = $1 ORDER BY username", [code]);
+    res.json(rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+app.post("/api/owner/labs/:code/staff/:id/reset-password", requireOwnerSession, async (req, res, next) => {
+  try {
+    const code = req.params.code.trim().toLowerCase();
+    const { newPassword } = req.body || {};
+    if (!isValidPassword(newPassword)) return res.status(400).json({ error: "New password must be 4-72 characters" });
+    const newHash = bcrypt.hashSync(newPassword, 10);
+    const { rowCount } = await pool.query(
+      "UPDATE staff SET password_hash = $1 WHERE id = $2 AND lab_code = $3",
+      [newHash, req.params.id, code]
+    );
+    if (!rowCount) return res.status(404).json({ error: "Staff account not found" });
+    res.json({ ok: true });
   } catch (err) {
     next(err);
   }

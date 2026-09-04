@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { createLab, loginLab, staffLogin, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, addDoctor, getReferrals, changePassword, getSecurityQuestion, resetPassword, getAnalytics, getStaffList, addStaff, removeStaff, downloadReport, downloadPatientsCsv, clearSession } from "./api.js";
+import { createLab, setSecurityQuestion as submitSecurityQuestion, loginLab, staffLogin, listLabs, getLabPublic, getLabFull, addPatient, updatePatient, addTest, updateTest, addDoctor, getReferrals, changePassword, getSecurityQuestion, resetPassword, getAnalytics, getStaffList, addStaff, removeStaff, downloadReport, downloadPatientsCsv, clearSession, ownerLogin, ownerListLabs, ownerResetLabPassword, ownerDeleteLab, ownerListStaff, ownerResetStaffPassword, clearOwnerSession, hasOwnerSession } from "./api.js";
 
 // Must match server/src/db.js SECURITY_QUESTIONS exactly.
 const SECURITY_QUESTIONS = [
@@ -205,11 +205,11 @@ function LabIllustration() {
    Landing / onboarding
 --------------------------------------------------------- */
 function Landing({ onLabReady, onPatientMode }) {
-  const [mode, setMode] = useState("new"); // new | existing | staff | forgot
+  const [mode, setMode] = useState("new"); // new | secure | existing | staff | forgot
   const [name, setName] = useState("");
   const [city, setCity] = useState("");
   const [password, setPassword] = useState("");
-  const [securityQuestion, setSecurityQuestion] = useState(SECURITY_QUESTIONS[0]);
+  const [securityQuestion, setSecurityQuestionField] = useState(SECURITY_QUESTIONS[0]);
   const [securityAnswer, setSecurityAnswer] = useState("");
   const [code, setCode] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
@@ -218,7 +218,11 @@ function Landing({ onLabReady, onPatientMode }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
 
-  // Forgot-password flow: step 1 asks for the code, step 2 shows the
+  // Set right after a new lab is created — used only to call the
+  // security-question-setup endpoint, then to hand off via onLabReady.
+  const [newLab, setNewLab] = useState(null);
+
+  // Forgot-password flow: step 1 asks for the lab name, step 2 shows the
   // question and collects the answer + new password.
   const [forgotCode, setForgotCode] = useState("");
   const [forgotQuestion, setForgotQuestion] = useState(null);
@@ -228,12 +232,28 @@ function Landing({ onLabReady, onPatientMode }) {
 
   async function createLabHandler(e) {
     e.preventDefault();
-    if (!name.trim() || !password.trim() || !securityAnswer.trim()) return;
+    if (!name.trim() || !password.trim()) return;
     setBusy(true);
     setErr("");
     try {
-      const lab = await createLab({ name, city, password, securityQuestion, securityAnswer });
-      onLabReady(lab.code, lab.role);
+      const lab = await createLab({ name, city, password });
+      setNewLab(lab);
+      setMode("secure");
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function secureAccountHandler(e) {
+    e.preventDefault();
+    if (!securityAnswer.trim() || !newLab) return;
+    setBusy(true);
+    setErr("");
+    try {
+      await submitSecurityQuestion(newLab.code, securityQuestion, securityAnswer);
+      onLabReady(newLab.code, newLab.role);
     } catch (e2) {
       setErr(e2.message);
     } finally {
@@ -247,7 +267,7 @@ function Landing({ onLabReady, onPatientMode }) {
     setBusy(true);
     setErr("");
     try {
-      const lab = await loginLab(code.trim().toLowerCase(), loginPassword);
+      const lab = await loginLab(code.trim(), loginPassword);
       onLabReady(lab.code, lab.role);
     } catch (e2) {
       setErr(e2.message);
@@ -262,7 +282,7 @@ function Landing({ onLabReady, onPatientMode }) {
     setBusy(true);
     setErr("");
     try {
-      const lab = await staffLogin(code.trim().toLowerCase(), staffUsername, staffPassword);
+      const lab = await staffLogin(code.trim(), staffUsername, staffPassword);
       onLabReady(lab.code, lab.role);
     } catch (e2) {
       setErr(e2.message);
@@ -277,7 +297,7 @@ function Landing({ onLabReady, onPatientMode }) {
     setBusy(true);
     setErr("");
     try {
-      const { question } = await getSecurityQuestion(forgotCode.trim().toLowerCase());
+      const { question } = await getSecurityQuestion(forgotCode.trim());
       setForgotQuestion(question);
     } catch (e2) {
       setErr(e2.message);
@@ -296,7 +316,7 @@ function Landing({ onLabReady, onPatientMode }) {
     setBusy(true);
     setErr("");
     try {
-      const lab = await resetPassword(forgotCode.trim().toLowerCase(), forgotAnswer, forgotNewPassword);
+      const lab = await resetPassword(forgotCode.trim(), forgotAnswer, forgotNewPassword);
       onLabReady(lab.code, lab.role);
     } catch (e2) {
       setErr(e2.message);
@@ -371,7 +391,7 @@ function Landing({ onLabReady, onPatientMode }) {
         </div>
 
         <div className="auth-card hero-fade-delay" style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 16, padding: 26 }}>
-          {mode !== "forgot" && mode !== "staff" && (
+          {mode !== "forgot" && mode !== "staff" && mode !== "secure" && (
             <div style={{ display: "flex", gap: 6, marginBottom: 18, background: T.bg, padding: 4, borderRadius: 10, border: `1px solid ${T.line}` }}>
               {[["new", "Start a new lab"], ["existing", "I already have a lab"]].map(([k, l]) => (
                 <button key={k} onClick={() => switchMode(k)} style={{
@@ -397,9 +417,24 @@ function Landing({ onLabReady, onPatientMode }) {
                 Password
                 <input className="field" style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
               </label>
+              <div style={{ fontSize: 12, color: T.sub, marginTop: -2 }}>
+                Your lab name is also how you'll log in later — so pick something you'll remember.
+              </div>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+                {busy ? "Creating..." : "Create lab account"}
+              </button>
+            </form>
+          )}
+
+          {mode === "secure" && (
+            <form onSubmit={secureAccountHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Secure your account</div>
+              <div style={{ fontSize: 12.5, color: T.sub, marginBottom: 4 }}>
+                One last step — this is what lets you reset your password later if you forget it.
+              </div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
-                Security question <span style={{ fontWeight: 400, color: T.sub }}>(used if you forget your password)</span>
-                <select className="field" style={inp} value={securityQuestion} onChange={(e) => setSecurityQuestion(e.target.value)}>
+                Security question
+                <select className="field" style={inp} value={securityQuestion} onChange={(e) => setSecurityQuestionField(e.target.value)}>
                   {SECURITY_QUESTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
                 </select>
               </label>
@@ -408,7 +443,7 @@ function Landing({ onLabReady, onPatientMode }) {
                 <input className="field" style={inp} value={securityAnswer} onChange={(e) => setSecurityAnswer(e.target.value)} placeholder="Remember this answer!" />
               </label>
               <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
-                {busy ? "Creating..." : "Create lab account"}
+                {busy ? "Saving..." : "Finish setting up"}
               </button>
             </form>
           )}
@@ -416,8 +451,8 @@ function Landing({ onLabReady, onPatientMode }) {
           {mode === "existing" && (
             <form onSubmit={loginLabHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
-                Lab code
-                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
+                Lab name
+                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. Ashirwad Diagnostics" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Password
@@ -441,8 +476,8 @@ function Landing({ onLabReady, onPatientMode }) {
             <form onSubmit={staffLoginHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Staff login</div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
-                Lab code
-                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
+                Lab name
+                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. Ashirwad Diagnostics" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Username
@@ -465,8 +500,8 @@ function Landing({ onLabReady, onPatientMode }) {
             <form onSubmit={fetchQuestionHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Reset password</div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
-                Lab code
-                <input className="field" style={inp} value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="e.g. ashirw482" />
+                Lab name
+                <input className="field" style={inp} value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="e.g. Ashirwad Diagnostics" />
               </label>
               <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Checking..." : "Continue"}
@@ -1198,12 +1233,187 @@ function PatientPortal({ back }) {
 }
 
 /* ---------------------------------------------------------
+   Owner panel — hidden platform admin, not linked anywhere in the
+   normal UI. Reached only by visiting /owner-console directly.
+--------------------------------------------------------- */
+function OwnerPanel() {
+  const [loggedIn, setLoggedIn] = useState(hasOwnerSession());
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const [labs, setLabs] = useState(null);
+  const [expanded, setExpanded] = useState(null); // code of the lab whose staff list is open
+  const [staffByLab, setStaffByLab] = useState({});
+  const [notice, setNotice] = useState("");
+
+  async function loadLabs() {
+    setErr("");
+    try {
+      setLabs(await ownerListLabs());
+    } catch (e) {
+      setErr(e.message);
+      if (/owner session/i.test(e.message)) { clearOwnerSession(); setLoggedIn(false); }
+    }
+  }
+
+  useEffect(() => { if (loggedIn) loadLabs(); }, [loggedIn]);
+
+  async function loginHandler(e) {
+    e.preventDefault();
+    setBusy(true);
+    setErr("");
+    try {
+      await ownerLogin(password);
+      setLoggedIn(true);
+    } catch (e2) {
+      setErr(e2.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function toggleStaff(code) {
+    if (expanded === code) { setExpanded(null); return; }
+    setExpanded(code);
+    if (!staffByLab[code]) {
+      try {
+        const list = await ownerListStaff(code);
+        setStaffByLab((s) => ({ ...s, [code]: list }));
+      } catch (e) {
+        setErr(e.message);
+      }
+    }
+  }
+
+  async function resetLabPw(code, labName) {
+    const newPassword = window.prompt(`New password for "${labName}" (min 4 characters):`);
+    if (!newPassword) return;
+    try {
+      await ownerResetLabPassword(code, newPassword);
+      setNotice(`Password for "${labName}" reset. Share it with the lab directly.`);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function resetStaffPw(code, staffId, username) {
+    const newPassword = window.prompt(`New password for staff "${username}" (min 4 characters):`);
+    if (!newPassword) return;
+    try {
+      await ownerResetStaffPassword(code, staffId, newPassword);
+      setNotice(`Password for staff "${username}" reset. Share it with them directly.`);
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  async function deleteLab(code, labName) {
+    if (!window.confirm(`Delete "${labName}" permanently? This removes all its patients, tests, doctors and staff. This cannot be undone.`)) return;
+    try {
+      await ownerDeleteLab(code);
+      setLabs((rows) => rows.filter((r) => r.code !== code));
+    } catch (e) {
+      setErr(e.message);
+    }
+  }
+
+  if (!loggedIn) {
+    return (
+      <div style={{ minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", background: T.bg }}>
+        <form onSubmit={loginHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 14, padding: 28, width: 320, display: "flex", flexDirection: "column", gap: 12 }}>
+          <div style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 700, fontSize: 17 }}>Owner panel</div>
+          <div style={{ fontSize: 12.5, color: T.sub }}>Platform-level access — not a lab account.</div>
+          <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
+            Password
+            <input className="field" style={inp} type="password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          </label>
+          {err && <div style={{ color: T.red, fontSize: 12.5 }}>{err}</div>}
+          <button disabled={busy} type="submit" className="btn-primary" style={{ background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+            {busy ? "Checking..." : "Enter"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, padding: "32px 40px" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+        <div style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 700, fontSize: 19 }}>Owner panel — all labs</div>
+        <button onClick={() => { clearOwnerSession(); setLoggedIn(false); }} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: "7px 14px", fontSize: 12.5, cursor: "pointer" }}>
+          Log out
+        </button>
+      </div>
+
+      {notice && <div style={{ background: `${T.green}18`, color: "#1F6B29", padding: "9px 14px", borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{notice}</div>}
+      {err && <div style={{ background: `${T.red}18`, color: T.red, padding: "9px 14px", borderRadius: 8, fontSize: 13, marginBottom: 14 }}>{err}</div>}
+
+      {!labs && <div style={{ color: T.sub, fontSize: 13.5 }}>Loading...</div>}
+
+      {labs && labs.length === 0 && <div style={{ color: T.sub, fontSize: 13.5 }}>No labs registered yet.</div>}
+
+      {labs && labs.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {labs.map((lab) => (
+            <div key={lab.code} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 12, padding: 16 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 10 }}>
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 14.5 }}>{lab.name}</div>
+                  <div style={{ fontSize: 12, color: T.sub, marginTop: 2 }}>
+                    {lab.city || "No city set"} · code: {lab.code} · {lab.patient_count} patients · {lab.staff_count} staff
+                    {!lab.has_security_question && <span style={{ color: T.amber, fontWeight: 600 }}> · no security question set</span>}
+                  </div>
+                </div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => toggleStaff(lab.code)} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: "7px 12px", fontSize: 12.5, cursor: "pointer" }}>
+                    {expanded === lab.code ? "Hide staff" : "View staff"}
+                  </button>
+                  <button onClick={() => resetLabPw(lab.code, lab.name)} style={{ background: "none", border: `1px solid ${T.line}`, borderRadius: 7, padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: T.teal, fontWeight: 600 }}>
+                    Reset password
+                  </button>
+                  <button onClick={() => deleteLab(lab.code, lab.name)} style={{ background: "none", border: `1px solid ${T.red}55`, borderRadius: 7, padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: T.red, fontWeight: 600 }}>
+                    Delete
+                  </button>
+                </div>
+              </div>
+
+              {expanded === lab.code && (
+                <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${T.line}` }}>
+                  {!staffByLab[lab.code] && <div style={{ fontSize: 12.5, color: T.sub }}>Loading staff...</div>}
+                  {staffByLab[lab.code] && staffByLab[lab.code].length === 0 && (
+                    <div style={{ fontSize: 12.5, color: T.sub }}>No staff accounts for this lab.</div>
+                  )}
+                  {staffByLab[lab.code] && staffByLab[lab.code].map((s) => (
+                    <div key={s.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 0", fontSize: 13 }}>
+                      <span>{s.username}</span>
+                      <button onClick={() => resetStaffPw(lab.code, s.id, s.username)} style={{ background: "none", border: "none", color: T.teal, fontSize: 12.5, fontWeight: 600, cursor: "pointer", padding: 0 }}>
+                        Reset password
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ---------------------------------------------------------
    Root
 --------------------------------------------------------- */
 export default function App() {
   const [view, setView] = useState("landing");
   const [labCode, setLabCode] = useState(null);
   const [role, setRole] = useState("admin");
+
+  // Hidden owner panel — reached only by knowing the URL, never linked from
+  // the regular UI. Not full client-side routing, just a one-time check.
+  if (typeof window !== "undefined" && window.location.pathname.replace(/\/$/, "") === "/owner-console") {
+    return <OwnerPanel />;
+  }
 
   return (
     <div style={{ minHeight: "100vh", fontFamily: "ui-sans-serif, system-ui, -apple-system" }}>

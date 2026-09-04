@@ -47,6 +47,26 @@ export async function initSchema() {
   await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'admin';`);
   await pool.query(`ALTER TABLE sessions ADD COLUMN IF NOT EXISTS staff_id INTEGER;`);
 
+  // Platform-owner sessions (the "secret" super-admin panel). Not tied to
+  // any lab, so no foreign key — just a token + timestamp.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS owner_sessions (
+      token TEXT PRIMARY KEY,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    );
+  `);
+
+  // Login now happens by lab NAME (people forget the random code, they
+  // never forget their own lab's name), so names must be unique,
+  // case-insensitively. Wrapped in try/catch: if an existing database
+  // somehow already has two labs with the same name, this logs a warning
+  // instead of crashing the whole server on boot.
+  try {
+    await pool.query(`CREATE UNIQUE INDEX IF NOT EXISTS labs_name_lower_idx ON labs (LOWER(name));`);
+  } catch (e) {
+    console.warn("Could not create unique index on lab name — you may have duplicate lab names already:", e.message);
+  }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS staff (
       id SERIAL PRIMARY KEY,

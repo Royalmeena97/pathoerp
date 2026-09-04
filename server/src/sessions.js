@@ -63,3 +63,34 @@ export function requireAdmin(req, res, next) {
   }
   next();
 }
+
+/* ---------- platform-owner sessions (the hidden super-admin panel) ---------- */
+// Separate from lab sessions above: not tied to any lab, just a token that
+// proves whoever holds it knows the OWNER_PASSWORD env var.
+export async function createOwnerSession() {
+  const token = crypto.randomBytes(24).toString("hex");
+  await pool.query("INSERT INTO owner_sessions (token) VALUES ($1)", [token]);
+  return token;
+}
+
+export async function getOwnerSessionInfo(token) {
+  const { rows } = await pool.query("SELECT created_at FROM owner_sessions WHERE token = $1", [token]);
+  const session = rows[0];
+  if (!session) return null;
+  if (Date.now() - new Date(session.created_at).getTime() > SESSION_TTL_MS) {
+    await pool.query("DELETE FROM owner_sessions WHERE token = $1", [token]);
+    return null;
+  }
+  return true;
+}
+
+export async function requireOwnerSession(req, res, next) {
+  try {
+    const token = req.header("x-owner-token");
+    const ok = token && (await getOwnerSessionInfo(token));
+    if (!ok) return res.status(401).json({ error: "Missing or invalid owner session" });
+    next();
+  } catch (err) {
+    next(err);
+  }
+}

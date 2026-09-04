@@ -30,11 +30,14 @@ async function handle(res) {
   return data;
 }
 
-export function createLab({ name, city, password, securityQuestion, securityAnswer }) {
+// Signup no longer collects a security question up front — that's a short
+// follow-up step right after the account is created (see
+// setSecurityQuestion below). The server tells us via needsSecurityQuestion.
+export function createLab({ name, city, password }) {
   return fetch(`${BASE}/labs`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, city, password, securityQuestion, securityAnswer }),
+    body: JSON.stringify({ name, city, password }),
   })
     .then(handle)
     .then((lab) => {
@@ -43,16 +46,28 @@ export function createLab({ name, city, password, securityQuestion, securityAnsw
     });
 }
 
+// Sets (or updates) the security question used for password recovery.
+// Called right after signup, or any time later from lab settings.
+export function setSecurityQuestion(code, securityQuestion, securityAnswer) {
+  return fetch(`${BASE}/labs/${encodeURIComponent(code)}/security-question-setup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...authHeaders() },
+    body: JSON.stringify({ securityQuestion, securityAnswer }),
+  }).then(handle);
+}
+
 export function getSecurityQuestions() {
   return fetch(`${BASE}/security-questions`).then(handle);
 }
 
-export function getSecurityQuestion(code) {
-  return fetch(`${BASE}/labs/${code}/security-question`).then(handle);
+// name is the lab's name now, not an internal code — people never forget
+// their own lab's name the way they forget a random generated code.
+export function getSecurityQuestion(name) {
+  return fetch(`${BASE}/labs/${encodeURIComponent(name)}/security-question`).then(handle);
 }
 
-export function resetPassword(code, answer, newPassword) {
-  return fetch(`${BASE}/labs/${code}/reset-password`, {
+export function resetPassword(name, answer, newPassword) {
+  return fetch(`${BASE}/labs/${encodeURIComponent(name)}/reset-password`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ answer, newPassword }),
@@ -64,8 +79,8 @@ export function resetPassword(code, answer, newPassword) {
     });
 }
 
-export function loginLab(code, password) {
-  return fetch(`${BASE}/labs/${code}/login`, {
+export function loginLab(name, password) {
+  return fetch(`${BASE}/labs/${encodeURIComponent(name)}/login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
@@ -77,8 +92,8 @@ export function loginLab(code, password) {
     });
 }
 
-export function staffLogin(code, username, password) {
-  return fetch(`${BASE}/labs/${code}/staff-login`, {
+export function staffLogin(name, username, password) {
+  return fetch(`${BASE}/labs/${encodeURIComponent(name)}/staff-login`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ username, password }),
@@ -209,4 +224,70 @@ export async function downloadPatientsCsv(code) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+}
+
+/* ---------- platform owner panel — a separate token from the lab session above ---------- */
+
+let ownerToken = sessionStorage.getItem("pathoerp_owner_token") || null;
+
+function setOwnerToken(token) {
+  ownerToken = token;
+  if (token) sessionStorage.setItem("pathoerp_owner_token", token);
+  else sessionStorage.removeItem("pathoerp_owner_token");
+}
+
+export function clearOwnerSession() {
+  setOwnerToken(null);
+}
+
+export function hasOwnerSession() {
+  return !!ownerToken;
+}
+
+function ownerHeaders() {
+  return ownerToken ? { "x-owner-token": ownerToken } : {};
+}
+
+export function ownerLogin(password) {
+  return fetch(`${BASE}/owner/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  })
+    .then(handle)
+    .then((res) => {
+      setOwnerToken(res.token);
+      return res;
+    });
+}
+
+export function ownerListLabs() {
+  return fetch(`${BASE}/owner/labs`, { headers: { ...ownerHeaders() } }).then(handle);
+}
+
+export function ownerResetLabPassword(code, newPassword) {
+  return fetch(`${BASE}/owner/labs/${code}/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
+    body: JSON.stringify({ newPassword }),
+  }).then(handle);
+}
+
+export function ownerDeleteLab(code) {
+  return fetch(`${BASE}/owner/labs/${code}`, {
+    method: "DELETE",
+    headers: { ...ownerHeaders() },
+  }).then(handle);
+}
+
+export function ownerListStaff(code) {
+  return fetch(`${BASE}/owner/labs/${code}/staff`, { headers: { ...ownerHeaders() } }).then(handle);
+}
+
+export function ownerResetStaffPassword(code, staffId, newPassword) {
+  return fetch(`${BASE}/owner/labs/${code}/staff/${staffId}/reset-password`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...ownerHeaders() },
+    body: JSON.stringify({ newPassword }),
+  }).then(handle);
 }
