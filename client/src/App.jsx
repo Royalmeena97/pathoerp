@@ -95,72 +95,107 @@ function Table({ cols, rows }) {
 --------------------------------------------------------- */
 function LabIllustration() {
   return (
-    <svg viewBox="0 0 420 420" style={{ width: "100%", maxWidth: 320, display: "block", margin: "0 auto" }} xmlns="http://www.w3.org/2000/svg">
-      <circle cx="210" cy="215" r="190" fill={T.teal} opacity="0.08" />
-      <circle cx="210" cy="215" r="150" fill={T.teal} opacity="0.10" />
-      <circle cx="70" cy="80" r="16" fill={T.amber} opacity="0.35" />
-      <circle cx="360" cy="330" r="22" fill={T.amber} opacity="0.25" />
-      <circle cx="345" cy="70" r="10" fill={T.teal} opacity="0.3" />
+    <svg viewBox="0 0 420 420" style={{ width: "100%", maxWidth: 340, display: "block", margin: "0 auto" }} xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <radialGradient id="bgGlow" cx="50%" cy="42%" r="60%">
+          <stop offset="0%" stopColor={T.teal} stopOpacity="0.16" />
+          <stop offset="100%" stopColor={T.teal} stopOpacity="0" />
+        </radialGradient>
+        <linearGradient id="coatGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#FFFFFF" />
+          <stop offset="100%" stopColor="#EAF3F1" />
+        </linearGradient>
+        <linearGradient id="skinGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor="#F6CDA3" />
+          <stop offset="100%" stopColor="#EFB989" />
+        </linearGradient>
+        <linearGradient id="tealGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stopColor={T.teal} />
+          <stop offset="100%" stopColor={T.tealDark} />
+        </linearGradient>
+        <filter id="softShadow" x="-40%" y="-40%" width="180%" height="180%">
+          <feDropShadow dx="0" dy="10" stdDeviation="12" floodColor="#0F2A2C" floodOpacity="0.16" />
+        </filter>
+        <filter id="cardShadow" x="-60%" y="-60%" width="220%" height="220%">
+          <feDropShadow dx="0" dy="6" stdDeviation="8" floodColor="#0F2A2C" floodOpacity="0.14" />
+        </filter>
+      </defs>
+
+      <circle cx="210" cy="205" r="185" fill="url(#bgGlow)" />
+      <circle cx="210" cy="205" r="148" fill="none" stroke={T.teal} strokeOpacity="0.12" strokeWidth="1.5" strokeDasharray="3 7" />
+      <circle cx="66" cy="86" r="14" fill={T.amber} opacity="0.3" />
+      <circle cx="362" cy="322" r="20" fill={T.amber} opacity="0.2" />
+      <circle cx="350" cy="66" r="8" fill={T.teal} opacity="0.28" />
 
       {/* floating medical cross badges */}
-      <g opacity="0.9">
-        <rect x="30" y="230" width="30" height="30" rx="8" fill={T.card} stroke={T.line} />
-        <rect x="42" y="238" width="6" height="14" rx="2" fill={T.red} />
-        <rect x="36" y="244" width="18" height="6" rx="2" fill={T.red} />
+      <g filter="url(#cardShadow)">
+        <rect x="26" y="224" width="32" height="32" rx="9" fill={T.card} />
+        <rect x="39" y="232" width="6" height="16" rx="2" fill={T.red} />
+        <rect x="33" y="238" width="18" height="6" rx="2" fill={T.red} />
       </g>
-      <g opacity="0.9">
-        <rect x="352" y="150" width="26" height="26" rx="7" fill={T.card} stroke={T.line} />
-        <rect x="362" y="157" width="6" height="12" rx="2" fill={T.teal} />
-        <rect x="357" y="162" width="16" height="6" rx="2" fill={T.teal} />
+      <g filter="url(#cardShadow)">
+        <rect x="354" y="146" width="28" height="28" rx="8" fill={T.card} />
+        <rect x="364" y="154" width="6" height="12" rx="2" fill={T.teal} />
+        <rect x="359" y="159" width="16" height="6" rx="2" fill={T.teal} />
       </g>
 
       {/* doctor */}
-      <g>
+      <g filter="url(#softShadow)">
         {/* coat body */}
-        <path d="M120 400 C120 300 150 260 210 260 C270 260 300 300 300 400 Z" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
+        <path d="M118 402 C118 296 150 254 210 254 C270 254 302 296 302 402 Z" fill="url(#coatGrad)" stroke={T.line} strokeWidth="1.5" />
         {/* coat lapels */}
-        <path d="M195 268 L210 330 L225 268" fill="none" stroke={T.line} strokeWidth="2" />
+        <path d="M193 262 L210 328 L227 262" fill="none" stroke={T.line} strokeWidth="1.5" />
         {/* undershirt */}
-        <path d="M198 266 C204 280 216 280 222 266 L214 300 L206 300 Z" fill={T.teal} />
+        <path d="M198 260 C204 276 216 276 222 260 L214 298 L206 298 Z" fill="url(#tealGrad)" />
         {/* neck */}
-        <rect x="196" y="238" width="28" height="30" rx="10" fill="#E9B08A" />
+        <rect x="195" y="232" width="30" height="32" rx="11" fill="url(#skinGrad)" />
         {/* head */}
-        <circle cx="210" cy="205" r="42" fill="#F1C29A" />
+        <circle cx="210" cy="197" r="44" fill="url(#skinGrad)" />
+        {/* ears */}
+        <circle cx="167" cy="198" r="6" fill="#EFB989" />
+        <circle cx="253" cy="198" r="6" fill="#EFB989" />
         {/* hair */}
-        <path d="M168 200 C164 160 180 138 210 138 C240 138 256 160 252 200 C244 182 228 172 210 172 C192 172 176 182 168 200 Z" fill="#3B2A20" />
+        <path d="M164 194 C158 150 178 126 210 126 C242 126 262 150 256 194 C248 172 230 160 210 160 C190 160 172 172 164 194 Z" fill="#3B2A20" />
+        {/* simple face */}
+        <circle cx="196" cy="198" r="2.6" fill="#3B2A20" />
+        <circle cx="224" cy="198" r="2.6" fill="#3B2A20" />
+        <path d="M199 214 Q210 222 221 214" fill="none" stroke="#8A5A38" strokeWidth="2.4" strokeLinecap="round" />
         {/* stethoscope around neck */}
-        <path d="M180 250 C180 275 168 285 158 278 C150 273 152 258 164 258" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
-        <path d="M240 250 C240 275 252 285 262 278 C270 273 268 258 256 258" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
-        <circle cx="158" cy="280" r="7" fill={T.tealDark} />
+        <path d="M180 246 C180 274 167 285 156 277 C147 271 150 254 163 254" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
+        <path d="M240 246 C240 274 253 285 264 277 C273 271 270 254 257 254" fill="none" stroke={T.tealDark} strokeWidth="5" strokeLinecap="round" />
+        <circle cx="156" cy="279" r="7.5" fill="url(#tealGrad)" />
         {/* pocket + badge */}
-        <rect x="228" y="318" width="34" height="24" rx="4" fill="none" stroke={T.line} strokeWidth="2" />
-        <circle cx="176" cy="300" r="9" fill={T.amber} opacity="0.85" />
+        <rect x="226" y="314" width="36" height="26" rx="4" fill="none" stroke={T.line} strokeWidth="1.5" />
+        <circle cx="174" cy="296" r="9" fill={T.amber} />
+        <rect x="169" y="292" width="10" height="2.4" rx="1" fill="#FFFFFF" opacity="0.85" />
+        <rect x="173" y="288" width="2.4" height="10" rx="1" fill="#FFFFFF" opacity="0.85" />
 
         {/* clipboard in hand */}
-        <g transform="translate(276 300) rotate(8)">
-          <rect x="0" y="0" width="56" height="72" rx="6" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
-          <rect x="18" y="-6" width="20" height="12" rx="3" fill={T.sub} />
-          <rect x="10" y="16" width="36" height="5" rx="2" fill={T.line} />
-          <rect x="10" y="28" width="36" height="5" rx="2" fill={T.line} />
-          <rect x="10" y="40" width="24" height="5" rx="2" fill={T.line} />
-          <path d="M12 54 L20 62 L34 46" fill="none" stroke={T.green} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
+        <g transform="translate(278 296) rotate(8)" filter="url(#cardShadow)">
+          <rect x="0" y="0" width="58" height="74" rx="7" fill="#FFFFFF" />
+          <rect x="19" y="-6" width="20" height="12" rx="3" fill={T.sub} />
+          <rect x="10" y="17" width="38" height="5" rx="2" fill={T.line} />
+          <rect x="10" y="29" width="38" height="5" rx="2" fill={T.line} />
+          <rect x="10" y="41" width="26" height="5" rx="2" fill={T.line} />
+          <path d="M12 56 L21 64 L36 47" fill="none" stroke={T.green} strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" />
         </g>
 
         {/* left hand + test tube */}
-        <g transform="translate(118 300) rotate(-6)">
-          <rect x="8" y="0" width="16" height="46" rx="8" fill="#FFFFFF" stroke={T.line} strokeWidth="2" />
-          <path d="M8 8 C8 22 24 22 24 8" fill={T.teal} opacity="0.75" />
-          <rect x="6" y="-10" width="20" height="10" rx="3" fill={T.sub} />
+        <g transform="translate(116 296) rotate(-6)" filter="url(#cardShadow)">
+          <rect x="8" y="0" width="16" height="48" rx="8" fill="#FFFFFF" />
+          <path d="M8 8 C8 23 24 23 24 8" fill="url(#tealGrad)" opacity="0.85" />
+          <rect x="6" y="-11" width="20" height="10" rx="3" fill={T.sub} />
         </g>
       </g>
 
       {/* table + microscope */}
-      <rect x="40" y="352" width="340" height="10" rx="4" fill={T.line} />
-      <g transform="translate(56 296)">
-        <rect x="0" y="40" width="46" height="8" rx="3" fill={T.sub} opacity="0.5" />
-        <rect x="18" y="10" width="10" height="34" rx="3" fill={T.sub} />
-        <circle cx="23" cy="8" r="10" fill={T.tealDark} />
-        <rect x="8" y="0" width="12" height="8" rx="2" fill={T.tealDark} transform="rotate(-25 14 4)" />
+      <rect x="34" y="356" width="352" height="10" rx="5" fill={T.line} filter="url(#cardShadow)" />
+      <g transform="translate(52 298)" filter="url(#cardShadow)">
+        <rect x="0" y="42" width="48" height="9" rx="3" fill={T.sub} opacity="0.45" />
+        <rect x="19" y="10" width="10" height="36" rx="3" fill={T.sub} />
+        <circle cx="24" cy="8" r="11" fill="url(#tealGrad)" />
+        <rect x="8" y="-2" width="13" height="9" rx="2" fill="url(#tealGrad)" transform="rotate(-25 14 4)" />
+        <circle cx="24" cy="8" r="4" fill="#FFFFFF" opacity="0.5" />
       </g>
     </svg>
   );
@@ -284,48 +319,65 @@ function Landing({ onLabReady, onPatientMode }) {
 
   return (
     <div style={{ background: T.bg, minHeight: "100%", color: T.ink }}>
-      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "18px 40px", borderBottom: `1px solid ${T.line}`, background: T.card }}>
-        <div style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 700, fontSize: 19 }}>
-          Nirikshan<span style={{ color: T.teal }}>Lab</span>
+      <header style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 40px", borderBottom: `1px solid ${T.line}`, background: T.card, boxShadow: "0 1px 0 rgba(15,42,44,0.02)" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div style={{
+            width: 30, height: 30, borderRadius: 9, background: `linear-gradient(135deg, ${T.teal}, ${T.tealDark})`,
+            position: "relative", boxShadow: "0 6px 14px -6px rgba(15,118,110,0.6)", flexShrink: 0,
+          }}>
+            <div style={{ position: "absolute", top: "50%", left: "50%", width: 3, height: 14, background: "#fff", borderRadius: 2, transform: "translate(-50%, -50%)" }} />
+            <div style={{ position: "absolute", top: "50%", left: "50%", width: 14, height: 3, background: "#fff", borderRadius: 2, transform: "translate(-50%, -50%)" }} />
+          </div>
+          <div style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 700, fontSize: 19 }}>
+            Nirikshan<span style={{ color: T.teal }}>Lab</span>
+          </div>
         </div>
-        <button onClick={onPatientMode} style={{ background: T.teal, color: "#fff", border: "none", padding: "9px 18px", borderRadius: 7, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
+        <button onClick={onPatientMode} className="btn-primary" style={{ background: T.teal, color: "#fff", border: "none", padding: "10px 20px", borderRadius: 8, fontSize: 13.5, fontWeight: 600, cursor: "pointer" }}>
           Book a test as patient
         </button>
       </header>
 
       <section style={{
-        display: "flex", gap: 36, padding: "60px 40px", flexWrap: "wrap", alignItems: "center",
-        background: `linear-gradient(180deg, ${T.teal}10 0%, ${T.bg} 65%)`,
+        display: "flex", gap: 40, padding: "68px 40px 76px", flexWrap: "wrap", alignItems: "center",
+        background: `linear-gradient(180deg, ${T.teal}12 0%, ${T.bg} 60%)`,
       }}>
-        <div style={{ flex: "1 1 380px", minWidth: 280 }}>
-          <div style={{ display: "inline-block", background: `${T.amber}1c`, color: T.amber, fontWeight: 700, fontSize: 11.5, letterSpacing: 0.6, textTransform: "uppercase", padding: "5px 12px", borderRadius: 999, marginBottom: 16 }}>
+        <div className="hero-fade" style={{ flex: "1 1 380px", minWidth: 280 }}>
+          <div style={{ display: "inline-flex", alignItems: "center", gap: 6, background: `${T.amber}1c`, color: "#9C5E12", fontWeight: 700, fontSize: 12, padding: "6px 13px", borderRadius: 999, marginBottom: 18 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: T.amber, display: "inline-block" }} />
             For pathology labs & diagnostic centres
           </div>
-          <h1 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontSize: 38, lineHeight: 1.15, fontWeight: 600, letterSpacing: -0.5, margin: 0 }}>
+          <h1 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontSize: 42, lineHeight: 1.14, fontWeight: 600, letterSpacing: -0.8, margin: 0, color: T.ink }}>
             Run your pathology lab without the paper trail.
           </h1>
-          <p style={{ fontSize: 15.5, color: T.sub, marginTop: 16, lineHeight: 1.6, maxWidth: 440 }}>
+          <p style={{ fontSize: 16, color: T.sub, marginTop: 18, lineHeight: 1.65, maxWidth: 440 }}>
             Registration, sample tracking, billing, doctor referrals and a patient booking page — one
             account per lab, data saved to a real database on the server.
           </p>
-          <div style={{ display: "flex", gap: 28, marginTop: 30, color: T.sub, fontSize: 13.5, flexWrap: "wrap" }}>
-            <div><b style={{ color: T.ink }}>Free</b> to try</div>
-            <div><b style={{ color: T.ink }}>Password</b> protected</div>
-            <div><b style={{ color: T.ink }}>Multi-lab</b> ready</div>
+          <div style={{ display: "flex", gap: 26, marginTop: 32, flexWrap: "wrap" }}>
+            {["Free to try", "Password protected", "Multi-lab ready"].map((t) => {
+              const [b, rest] = [t.split(" ")[0], t.split(" ").slice(1).join(" ")];
+              return (
+                <div key={t} style={{ display: "flex", alignItems: "center", gap: 7, fontSize: 13.5, color: T.sub }}>
+                  <svg width="15" height="15" viewBox="0 0 20 20" fill="none"><circle cx="10" cy="10" r="10" fill={T.teal} opacity="0.14" /><path d="M6 10.5l2.5 2.5L14 7.5" stroke={T.tealDark} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                  <span><b style={{ color: T.ink }}>{b}</b> {rest}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
 
-        <div style={{ flex: "1 1 260px", minWidth: 220, maxWidth: 320 }}>
+        <div className="hero-fade-delay" style={{ flex: "1 1 260px", minWidth: 220, maxWidth: 320 }}>
           <LabIllustration />
         </div>
 
-        <div style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 14, padding: 24, boxShadow: "0 12px 32px -18px rgba(15,42,44,0.35)" }}>
+        <div className="auth-card hero-fade-delay" style={{ flex: "1 1 340px", minWidth: 300, maxWidth: 380, background: T.card, border: `1px solid ${T.line}`, borderRadius: 16, padding: 26 }}>
           {mode !== "forgot" && mode !== "staff" && (
-            <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, background: T.bg, padding: 4, borderRadius: 10, border: `1px solid ${T.line}` }}>
               {[["new", "Start a new lab"], ["existing", "I already have a lab"]].map(([k, l]) => (
                 <button key={k} onClick={() => switchMode(k)} style={{
                   flex: 1, padding: "8px 6px", borderRadius: 7, fontSize: 12.5, fontWeight: 600, cursor: "pointer",
-                  border: `1px solid ${T.line}`, background: mode === k ? T.teal : "transparent", color: mode === k ? "#fff" : T.ink,
+                  border: "none", background: mode === k ? T.teal : "transparent", color: mode === k ? "#fff" : T.sub,
+                  boxShadow: mode === k ? "0 6px 14px -6px rgba(15,118,110,0.55)" : "none", transition: "all .15s ease",
                 }}>{l}</button>
               ))}
             </div>
@@ -335,27 +387,27 @@ function Landing({ onLabReady, onPatientMode }) {
             <form onSubmit={createLabHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab name
-                <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ashirwad Diagnostics" />
+                <input className="field" style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Ashirwad Diagnostics" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 City
-                <input style={inp} value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Ghaziabad" />
+                <input className="field" style={inp} value={city} onChange={(e) => setCity(e.target.value)} placeholder="e.g. Ghaziabad" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Password
-                <input style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
+                <input className="field" style={inp} type="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="At least 4 characters" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Security question <span style={{ fontWeight: 400, color: T.sub }}>(used if you forget your password)</span>
-                <select style={inp} value={securityQuestion} onChange={(e) => setSecurityQuestion(e.target.value)}>
+                <select className="field" style={inp} value={securityQuestion} onChange={(e) => setSecurityQuestion(e.target.value)}>
                   {SECURITY_QUESTIONS.map((q) => <option key={q} value={q}>{q}</option>)}
                 </select>
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Your answer
-                <input style={inp} value={securityAnswer} onChange={(e) => setSecurityAnswer(e.target.value)} placeholder="Remember this answer!" />
+                <input className="field" style={inp} value={securityAnswer} onChange={(e) => setSecurityAnswer(e.target.value)} placeholder="Remember this answer!" />
               </label>
-              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Creating..." : "Create lab account"}
               </button>
             </form>
@@ -365,13 +417,13 @@ function Landing({ onLabReady, onPatientMode }) {
             <form onSubmit={loginLabHandler} style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab code
-                <input style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
+                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Password
-                <input style={inp} type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Your lab password" />
+                <input className="field" style={inp} type="password" value={loginPassword} onChange={(e) => setLoginPassword(e.target.value)} placeholder="Your lab password" />
               </label>
-              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Checking..." : "Continue"}
               </button>
               <div style={{ display: "flex", justifyContent: "space-between", marginTop: 2 }}>
@@ -390,17 +442,17 @@ function Landing({ onLabReady, onPatientMode }) {
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Staff login</div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab code
-                <input style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
+                <input className="field" style={inp} value={code} onChange={(e) => setCode(e.target.value)} placeholder="e.g. ashirw482" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Username
-                <input style={inp} value={staffUsername} onChange={(e) => setStaffUsername(e.target.value)} placeholder="Given to you by the lab owner" />
+                <input className="field" style={inp} value={staffUsername} onChange={(e) => setStaffUsername(e.target.value)} placeholder="Given to you by the lab owner" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Password
-                <input style={inp} type="password" value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} />
+                <input className="field" style={inp} type="password" value={staffPassword} onChange={(e) => setStaffPassword(e.target.value)} />
               </label>
-              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Checking..." : "Continue"}
               </button>
               <button type="button" onClick={() => switchMode("existing")} style={{ background: "none", border: "none", color: T.sub, fontSize: 12.5, cursor: "pointer", padding: 0, textAlign: "left", marginTop: 2 }}>
@@ -414,9 +466,9 @@ function Landing({ onLabReady, onPatientMode }) {
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Reset password</div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Lab code
-                <input style={inp} value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="e.g. ashirw482" />
+                <input className="field" style={inp} value={forgotCode} onChange={(e) => setForgotCode(e.target.value)} placeholder="e.g. ashirw482" />
               </label>
-              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Checking..." : "Continue"}
               </button>
               <button type="button" onClick={() => switchMode("existing")} style={{ background: "none", border: "none", color: T.sub, fontSize: 12.5, cursor: "pointer", padding: 0, textAlign: "left", marginTop: 2 }}>
@@ -430,17 +482,17 @@ function Landing({ onLabReady, onPatientMode }) {
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 2 }}>Reset password</div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 {forgotQuestion}
-                <input style={inp} value={forgotAnswer} onChange={(e) => setForgotAnswer(e.target.value)} placeholder="Your answer" />
+                <input className="field" style={inp} value={forgotAnswer} onChange={(e) => setForgotAnswer(e.target.value)} placeholder="Your answer" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 New password
-                <input style={inp} type="password" value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 4 characters" />
+                <input className="field" style={inp} type="password" value={forgotNewPassword} onChange={(e) => setForgotNewPassword(e.target.value)} placeholder="At least 4 characters" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>
                 Confirm new password
-                <input style={inp} type="password" value={forgotConfirm} onChange={(e) => setForgotConfirm(e.target.value)} />
+                <input className="field" style={inp} type="password" value={forgotConfirm} onChange={(e) => setForgotConfirm(e.target.value)} />
               </label>
-              <button disabled={busy} type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+              <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "11px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 {busy ? "Resetting..." : "Reset password & log in"}
               </button>
             </form>
@@ -731,18 +783,18 @@ function LabAdmin({ labCode, role, back }) {
             <h2 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 18px" }}>New Registration</h2>
             <form onSubmit={addPatientHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 10, padding: 22, maxWidth: 420, display: "flex", flexDirection: "column", gap: 12 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Patient name
-                <input style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
+                <input className="field" style={inp} value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="Full name" />
               </label>
               <div style={{ display: "flex", gap: 12 }}>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Age
-                  <input style={inp} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} placeholder="e.g. 34" />
+                  <input className="field" style={inp} value={form.age} onChange={(e) => setForm({ ...form, age: e.target.value })} placeholder="e.g. 34" />
                 </label>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Phone
-                  <input style={inp} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="10-digit mobile" />
+                  <input className="field" style={inp} value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="10-digit mobile" />
                 </label>
               </div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Test
-                <select style={inp} value={form.test} onChange={(e) => setForm({ ...form, test: e.target.value })}>
+                <select className="field" style={inp} value={form.test} onChange={(e) => setForm({ ...form, test: e.target.value })}>
                   {Object.entries(groupBy(lab.tests, "category")).map(([cat, ts]) => (
                     <optgroup key={cat} label={cat}>
                       {ts.map((t) => <option key={t.code} value={t.code}>{t.name} — ₹{t.price}</option>)}
@@ -751,7 +803,7 @@ function LabAdmin({ labCode, role, back }) {
                 </select>
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Referring doctor <span style={{ fontWeight: 400 }}>(optional)</span>
-                <select style={inp} value={form.doctorId} onChange={(e) => setForm({ ...form, doctorId: e.target.value })}>
+                <select className="field" style={inp} value={form.doctorId} onChange={(e) => setForm({ ...form, doctorId: e.target.value })}>
                   <option value="">Walk-in (no referral)</option>
                   {lab.doctors.map((d) => <option key={d.id} value={d.id}>{d.name}{d.commission_percent ? ` — ${d.commission_percent}% commission` : ""}</option>)}
                 </select>
@@ -904,24 +956,24 @@ function LabAdmin({ labCode, role, back }) {
             <form onSubmit={addTestHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 460, display: "flex", flexDirection: "column", gap: 10 }}>
               <div style={{ display: "flex", gap: 12 }}>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Test code
-                  <input style={inp} value={testForm.code} onChange={(e) => setTestForm({ ...testForm, code: e.target.value })} placeholder="e.g. HBA1C-05" />
+                  <input className="field" style={inp} value={testForm.code} onChange={(e) => setTestForm({ ...testForm, code: e.target.value })} placeholder="e.g. HBA1C-05" />
                 </label>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Price (₹)
-                  <input style={inp} type="number" min="0" value={testForm.price} onChange={(e) => setTestForm({ ...testForm, price: e.target.value })} placeholder="e.g. 400" />
+                  <input className="field" style={inp} type="number" min="0" value={testForm.price} onChange={(e) => setTestForm({ ...testForm, price: e.target.value })} placeholder="e.g. 400" />
                 </label>
               </div>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Test name
-                <input style={inp} value={testForm.name} onChange={(e) => setTestForm({ ...testForm, name: e.target.value })} placeholder="e.g. HbA1c (Diabetes)" />
+                <input className="field" style={inp} value={testForm.name} onChange={(e) => setTestForm({ ...testForm, name: e.target.value })} placeholder="e.g. HbA1c (Diabetes)" />
               </label>
               <div style={{ display: "flex", gap: 12 }}>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Category
-                  <input style={inp} list="category-options" value={testForm.category} onChange={(e) => setTestForm({ ...testForm, category: e.target.value })} placeholder="e.g. Blood Tests" />
+                  <input className="field" style={inp} list="category-options" value={testForm.category} onChange={(e) => setTestForm({ ...testForm, category: e.target.value })} placeholder="e.g. Blood Tests" />
                   <datalist id="category-options">
                     {Object.keys(groupBy(lab.tests, "category")).map((c) => <option key={c} value={c} />)}
                   </datalist>
                 </label>
                 <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, flex: 1 }}>Turnaround time
-                  <select style={inp} value={testForm.tat} onChange={(e) => setTestForm({ ...testForm, tat: e.target.value })}>
+                  <select className="field" style={inp} value={testForm.tat} onChange={(e) => setTestForm({ ...testForm, tat: e.target.value })}>
                     <option>Same day</option>
                     <option>Next day</option>
                     <option>2-3 days</option>
@@ -1006,13 +1058,13 @@ function LabAdmin({ labCode, role, back }) {
             <h3 style={{ fontFamily: "'Space Grotesk', ui-sans-serif", fontWeight: 600, margin: "0 0 12px", fontSize: 15 }}>Change password</h3>
             <form onSubmit={changePasswordHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 10, padding: 22, maxWidth: 380, display: "flex", flexDirection: "column", gap: 10 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Current password
-                <input style={inp} type="password" value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} />
+                <input className="field" style={inp} type="password" value={pwForm.current} onChange={(e) => setPwForm({ ...pwForm, current: e.target.value })} />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>New password
-                <input style={inp} type="password" value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} placeholder="At least 4 characters" />
+                <input className="field" style={inp} type="password" value={pwForm.next} onChange={(e) => setPwForm({ ...pwForm, next: e.target.value })} placeholder="At least 4 characters" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Confirm new password
-                <input style={inp} type="password" value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} />
+                <input className="field" style={inp} type="password" value={pwForm.confirm} onChange={(e) => setPwForm({ ...pwForm, confirm: e.target.value })} />
               </label>
               <button type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "10px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 Update password
@@ -1034,10 +1086,10 @@ function LabAdmin({ labCode, role, back }) {
             )}
             <form onSubmit={addStaffHandler} style={{ background: T.card, border: `1px solid ${T.line}`, borderRadius: 10, padding: 20, maxWidth: 380, display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Username
-                <input style={inp} value={staffForm.username} onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })} placeholder="e.g. reception1" />
+                <input className="field" style={inp} value={staffForm.username} onChange={(e) => setStaffForm({ ...staffForm, username: e.target.value })} placeholder="e.g. reception1" />
               </label>
               <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Password
-                <input style={inp} type="password" value={staffForm.password} onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="At least 4 characters" />
+                <input className="field" style={inp} type="password" value={staffForm.password} onChange={(e) => setStaffForm({ ...staffForm, password: e.target.value })} placeholder="At least 4 characters" />
               </label>
               <button type="submit" style={{ marginTop: 4, background: T.teal, color: "#fff", border: "none", padding: "10px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
                 Add staff account
@@ -1123,12 +1175,12 @@ function PatientPortal({ back }) {
               </label>
             ))}
             <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600, marginTop: 8 }}>Your name
-              <input style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
+              <input className="field" style={inp} value={name} onChange={(e) => setName(e.target.value)} placeholder="Full name" />
             </label>
             <label style={{ fontSize: 12.5, color: T.sub, fontWeight: 600 }}>Phone
-              <input style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
+              <input className="field" style={inp} value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="10-digit mobile" />
             </label>
-            <button disabled={busy} type="submit" style={{ marginTop: 8, background: T.teal, color: "#fff", border: "none", padding: "12px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
+            <button disabled={busy} type="submit" className="btn-primary" style={{ marginTop: 8, background: T.teal, color: "#fff", border: "none", padding: "12px 18px", borderRadius: 7, fontWeight: 600, cursor: "pointer" }}>
               {busy ? "Booking..." : "Confirm booking"}
             </button>
           </form>

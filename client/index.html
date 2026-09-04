@@ -10,6 +10,31 @@
       * { box-sizing: border-box; }
       body { margin: 0; }
       #root { min-height: 100vh; }
+
+      /* Interactive polish for buttons, inputs and the landing hero. */
+      .btn-primary { transition: transform .15s ease, box-shadow .15s ease, filter .15s ease; box-shadow: 0 10px 24px -12px rgba(15,118,110,0.55); }
+      .btn-primary:hover { transform: translateY(-1px); filter: brightness(1.05); box-shadow: 0 14px 28px -12px rgba(15,118,110,0.6); }
+      .btn-primary:active { transform: translateY(0); filter: brightness(0.97); }
+      .btn-primary:disabled { opacity: 0.65; transform: none; box-shadow: none; cursor: default; }
+
+      .btn-ghost { transition: background .15s ease, border-color .15s ease; }
+      .btn-ghost:hover { background: rgba(15,118,110,0.06); border-color: #0F766E; }
+
+      .field { transition: border-color .15s ease, box-shadow .15s ease; }
+      .field:focus { outline: none; border-color: #0F766E !important; box-shadow: 0 0 0 3px rgba(15,118,110,0.14); }
+
+      .auth-card { box-shadow: 0 20px 44px -22px rgba(15,42,44,0.4), 0 2px 8px rgba(15,42,44,0.05); transition: box-shadow .2s ease; }
+
+      .hero-fade { animation: heroFadeUp .7s cubic-bezier(.2,.7,.2,1) both; }
+      .hero-fade-delay { animation: heroFadeUp .7s cubic-bezier(.2,.7,.2,1) .12s both; }
+      @keyframes heroFadeUp {
+        from { opacity: 0; transform: translateY(14px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .hero-fade, .hero-fade-delay { animation: none; }
+        .btn-primary:hover { transform: none; }
+      }
     </style>
   </head>
   <body>
